@@ -50,12 +50,13 @@ Prebuilt packages for each release are on the
 | Platform | Download |
 |---|---|
 | macOS (Apple Silicon) | `Badge Studio_<version>_aarch64.dmg` |
-| macOS (Intel) | `Badge Studio_<version>_x64.dmg` |
 | Windows | `Badge Studio_<version>_x64-setup.exe` or `.msi` |
 | Linux (Debian/Ubuntu) | `.deb` |
 | Linux (Fedora/RHEL) | `.rpm` |
 | Linux (portable) | `.AppImage` |
 | Linux (binary only) | `.tar.gz` |
+
+macOS builds are Apple Silicon only. Intel Macs need a build from source.
 
 The releases are not code-signed.
 
