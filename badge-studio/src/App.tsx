@@ -19,10 +19,18 @@ import { ToolOptions, ToolPalette } from "./components/ToolPalette";
 import Timeline from "./components/Timeline";
 import BadgePreview from "./components/BadgePreview";
 import TransportBar from "./components/TransportBar";
+import PlaybackBar from "./components/PlaybackBar";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Modal from "./components/Modal";
-import { previewPeriod, stepDelay } from "./badge";
+import {
+  previewPeriod,
+  sequenceAt,
+  sequenceLength,
+  sequenceSlots,
+  stepDelay,
+} from "./badge";
+import { faceList, fitText, loadFontMetrics, measureText } from "./font";
 import { importImage } from "./importImage";
 import {
   DocError,
@@ -42,6 +50,7 @@ import {
   type Rect,
 } from "./draw";
 import {
+  byteColumns,
   blankFrame,
   cloneFrame,
   flipH,
@@ -55,9 +64,9 @@ import {
 import {
   BADGE_HEIGHT,
   BADGE_WIDTH,
-  FRAME_WIDTH,
   ANIMATION_MAX_FRAMES,
   MAX_MESSAGES,
+  MAX_BYTE_COLUMNS,
   TOOLS,
   TOOL_KEYS,
   MODES,
@@ -100,13 +109,32 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("badge-led", led);
   }, [led]);
+
+  useEffect(() => {
+    loadFontMetrics().then(
+      () => setMetricsReady(true),
+      // Not worth blocking the editor over: measuring falls back to 8px per
+      // character, which is right for the face selected at startup.
+      () => undefined
+    );
+  }, []);
   const [activeId, setActiveId] = useState<string>(() => project.messages[0].id);
   const [frameIndex, setFrameIndex] = useState(0);
   // Parked on the first frame at startup. An animation looping the moment the
   // app opens is motion nobody asked for; press play to preview it.
   const [playing, setPlaying] = useState(false);
+  // Preview one message, or the whole 8-slot loop the badge actually cycles.
+  const [scope, setScope] = useState<"message" | "sequence">("message");
   const [onion, setOnion] = useState(true);
   const [textInput, setTextInput] = useState("");
+  // The face the next stamp uses. Not stored in the document: text becomes
+  // pixels the moment it is stamped, so a project has no idea which face drew
+  // it and messages can freely mix them.
+  const [faceId, setFaceId] = useState("serif");
+  // Bumped once the faces arrive, so anything measured before then is
+  // remeasured with the real widths rather than the 8px assumption.
+  const [metricsReady, setMetricsReady] = useState(false);
+  const faces = useMemo(() => (metricsReady ? faceList() : []), [metricsReady]);
   const [textWarning, setTextWarning] = useState<string | null>(null);
   // Insert is a two-button group; only the open one shows its controls.
   const [insert, setInsert] = useState<"text" | "image" | null>(null);
@@ -220,8 +248,8 @@ export default function App() {
           return {
             ...m,
             mode,
-            width: FRAME_WIDTH,
-            frames: m.frames.map((f) => resizeFrame(f, FRAME_WIDTH)),
+            width: BADGE_WIDTH,
+            frames: m.frames.map((f) => resizeFrame(f, BADGE_WIDTH)),
           };
         }
         // Leaving animation mode collapses to the first frame, since every
@@ -256,7 +284,10 @@ export default function App() {
   const insertText = useCallback(async () => {
     if (!textInput || !active) return;
     try {
-      const bmp = await invoke<TextBitmap>("render_text", { text: textInput });
+      const bmp = await invoke<TextBitmap>("render_text", {
+        text: textInput,
+        face: faceId,
+      });
       setTextWarning(
         bmp.missing.length
           ? `No glyph for ${bmp.missing.join(" ")}, replaced with "?"`
@@ -268,7 +299,7 @@ export default function App() {
           if (i !== frameIndex) return f;
           const base = grow ? blankFrame(bmp.width) : f;
           const out = stamp(base, bmp.rows, 0, 0, true);
-          // Animation frames must stay exactly FRAME_WIDTH wide.
+          // Animation frames must stay exactly the display width.
           return grow ? out : resizeFrame(out, m.width);
         });
         return {
@@ -281,7 +312,7 @@ export default function App() {
     } catch (e) {
       setTextWarning(String(e));
     }
-  }, [textInput, active, frameIndex, updateActive]);
+  }, [textInput, faceId, active, frameIndex, updateActive]);
 
   const copySelection = useCallback(() => {
     if (!selection || !active) return;
@@ -350,7 +381,29 @@ export default function App() {
     updateFrame(() => prev.map((row) => row.slice()));
   }, [active, frameIndex, updateFrame]);
 
-  const period = useMemo(() => (active ? previewPeriod(active) : 1), [active]);
+  const slots = useMemo(
+    () => sequenceSlots(project.messages),
+    [project.messages]
+  );
+
+  // In sequence scope the step counts across every slot, so the message being
+  // shown is whichever the playhead is inside, not the one being edited.
+  const here = useMemo(
+    () => (scope === "sequence" ? sequenceAt(slots, step) : null),
+    [scope, slots, step]
+  );
+  const shown = here ? project.messages[here.slot.index] ?? active : active;
+  const shownStep = here ? here.local : step;
+
+  const period = useMemo(
+    () =>
+      scope === "sequence"
+        ? sequenceLength(slots)
+        : active
+          ? previewPeriod(active)
+          : 1,
+    [scope, slots, active]
+  );
 
   // Scrubbing takes the preview off the clock: dragging the bar or stepping a
   // frame while it is playing would be undone by the next interval tick.
@@ -607,6 +660,26 @@ export default function App() {
     }
   }, [importMessageFrom]);
 
+  // Byte columns still available for this message. The badge's buffer is shared
+  // across all 8 slots, so what the others spend is not available here.
+  const textBudget = useMemo(() => {
+    const others = project.messages
+      .filter((m) => m.id !== activeId)
+      .reduce((n, m) => n + byteColumns(m), 0);
+    return Math.max(0, MAX_BYTE_COLUMNS - others);
+  }, [project.messages, activeId]);
+
+  // The budget in the units the face measures in. A proportional face lands
+  // wherever it lands and the message rounds up to a byte column at the end.
+  const textBudgetPx = textBudget * 8;
+
+  // What the typed string will actually occupy in the chosen face, asked of
+  // that face rather than inferred from the string's length. See font.ts.
+  const textPx = useMemo(
+    () => measureText(textInput, faceId),
+    [textInput, faceId, metricsReady]
+  );
+
   const currentJson = useMemo(() => serializeProject(project), [project]);
   const dirty = currentJson !== savedJson;
 
@@ -848,26 +921,31 @@ export default function App() {
     [project, commit, activeId]
   );
 
-  useEffect(() => setStep(0), [activeId, active?.mode]);
+  useEffect(() => setStep(0), [activeId, active?.mode, scope]);
 
   useEffect(() => {
-    if (!active || !playing || period <= 1) return;
+    if (!shown || !playing || period <= 1) return;
     const t = setInterval(
       () => setStep((s) => (s + 1) % period),
-      stepDelay(active.speed)
+      stepDelay(shown.speed)
     );
     return () => clearInterval(t);
-  }, [active, playing, period]);
+  }, [shown, playing, period]);
 
   // Only animation mode has real frames. Showing "51 / 68" for a scrolling
   // message reads as a frame count when it is really scroll position.
-  const frameLabel = !active
-    ? null
-    : active.mode === "animation"
-      ? `frame ${step + 1} / ${active.frames.length}`
-      : active.mode === "fixed"
-        ? "still"
-        : null;
+  const frameLabel = (() => {
+    if (!shown) return null;
+    const where =
+      scope === "sequence" && here
+        ? `${here.slot.index + 1}/${project.messages.length} · `
+        : "";
+    if (shown.mode === "animation") {
+      return `${where}frame ${shownStep + 1} / ${shown.frames.length}`;
+    }
+    if (shown.mode === "fixed") return `${where}still`;
+    return where ? where.replace(/ · $/, "") : null;
+  })();
 
   const currentFrame = active?.frames[frameIndex] ?? blankFrame(BADGE_WIDTH);
   const onionFrame =
@@ -950,7 +1028,12 @@ export default function App() {
             {project.messages.map((m, i) => (
               <li
                 key={m.id}
-                className={m.id === activeId ? "active" : ""}
+                className={[
+                  m.id === activeId ? "active" : "",
+                  here?.slot.index === i ? "playing" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onClick={() => {
                   setActiveId(m.id);
                   setFrameIndex(0);
@@ -987,11 +1070,24 @@ export default function App() {
             <>
               <div className="preview-strip">
                 <BadgePreview
-                  message={active}
-                  step={step}
+                  message={shown}
+                  step={shownStep}
                   brightness={project.brightness}
                   playing={playing}
                   led={led}
+                />
+                <PlaybackBar
+                  playing={playing}
+                  onTogglePlay={() => setPlaying((p) => !p)}
+                  onRestart={() => setStep(0)}
+                  frameLabel={frameLabel}
+                  step={step}
+                  period={period}
+                  onScrub={scrubTo}
+                  onJog={scrubBy}
+                  scope={scope}
+                  onScope={setScope}
+                  canSequence={project.messages.length > 1}
                 />
               </div>
 
@@ -1115,7 +1211,11 @@ export default function App() {
                         autoFocus
                         placeholder="Text to stamp into this frame"
                         value={textInput}
-                        onChange={(e) => setTextInput(e.target.value)}
+                        onChange={(e) =>
+                          setTextInput(
+                            fitText(e.target.value, textBudgetPx, faceId)
+                          )
+                        }
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             insertText();
@@ -1135,6 +1235,26 @@ export default function App() {
                         Insert
                       </button>
                       <button onClick={() => setInsert(null)}>Cancel</button>
+                      {faces.length > 1 && (
+                        <select
+                          value={faceId}
+                          onChange={(e) => setFaceId(e.target.value)}
+                          title="Typeface for this stamp. Text becomes pixels once stamped, so one message can mix faces."
+                          aria-label="Typeface"
+                        >
+                          {faces.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <span
+                        className={textPx >= textBudgetPx ? "warn small" : "mu small"}
+                        title={`Width, not character count: the badge holds ${MAX_BYTE_COLUMNS * 8}px of text across all messages, and the others use ${(MAX_BYTE_COLUMNS - textBudget) * 8}px.`}
+                      >
+                        {textPx} / {textBudgetPx} px
+                      </span>
                     </div>
                   )}
 
@@ -1180,7 +1300,28 @@ export default function App() {
 
                   <div className="bar-row">
                     <span className="group-tag">This frame</span>
-                    <button onClick={() => updateFrame(() => blankFrame(active.width))}>
+                    {/* Back to a bare badge, not a blank canvas of whatever
+                        width the last drawing happened to need. Clearing a
+                        240px scroll otherwise leaves an empty 240px canvas and
+                        a trip to the Width box to undo it.
+
+                        Resizing the siblings cannot lose anything: extra frames
+                        exist only in animation mode, where the width is already
+                        the badge's own. */}
+                    <button
+                      onClick={() =>
+                        updateActive((m) => ({
+                          ...m,
+                          width: BADGE_WIDTH,
+                          frames: m.frames.map((f, i) =>
+                            i === frameIndex
+                              ? blankFrame(BADGE_WIDTH)
+                              : resizeFrame(f, BADGE_WIDTH)
+                          ),
+                        }))
+                      }
+                      title={`Erase this frame and return the canvas to ${BADGE_WIDTH}x${BADGE_HEIGHT}`}
+                    >
                       Clear
                     </button>
                     <button onClick={() => updateFrame(invert)}>Invert</button>
@@ -1276,14 +1417,6 @@ export default function App() {
         messages={project.messages}
         brightness={project.brightness}
         onBrightness={(b) => commit({ ...project, brightness: b })}
-        playing={playing}
-        onTogglePlay={() => setPlaying((p) => !p)}
-        onRestart={() => setStep(0)}
-        frameLabel={frameLabel}
-        step={step}
-        period={period}
-        onScrub={scrubTo}
-        onJog={scrubBy}
       />
 
       {ask?.kind === "unsaved" && (

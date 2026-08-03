@@ -24,7 +24,14 @@ pub const MAGIC: [u8; 4] = *b"wang";
 pub const HEADER_SIZE: usize = 64;
 pub const DEVICE_BUFFER: usize = 8192;
 pub const BADGE_HEIGHT: usize = 11;
-/// Animation frames are 48px wide even on 44px displays.
+/// LEDs across the panel. Everything the badge can actually show fits here.
+pub const BADGE_WIDTH: usize = 44;
+/// Columns the firmware advances per animation frame.
+///
+/// Larger than the panel, so the last four columns of every frame are padding
+/// that never lights up. Frames arrive at `BADGE_WIDTH` and are padded out to
+/// this when packing; sending them any narrower would land each frame four
+/// columns early on the badge.
 pub const FRAME_WIDTH: usize = 48;
 pub const MAX_MESSAGES: usize = 8;
 /// Ceiling from the 8192-byte device buffer. Inherited from the USB-HID lineage
@@ -308,5 +315,103 @@ mod tests {
         assert!(pack(&[], 100, Stamp::default()).is_err());
         assert!(pack(&[msg(1, Mode::Fixed, 9)], 100, Stamp::default()).is_err());
         assert!(pack(&[msg(1, Mode::Fixed, 1)], 33, Stamp::default()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    /// The editor stores animation frames at the display width; the wire format
+    /// steps 48 columns per frame. Packing has to bridge that, or every frame
+    /// after the first lands 4 columns early on the badge.
+    #[test]
+    fn display_width_frames_pack_to_the_wire_stride() {
+        let narrow = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
+        let (bytes, cols) = frames_to_bitmap(&vec![narrow.clone(), narrow]);
+        assert_eq!(cols, 2 * FRAME_WIDTH / 8, "two frames at the 48px stride");
+        assert_eq!(bytes.len(), cols * BADGE_HEIGHT);
+
+        // Column 44 of each frame is padding and must be dark, or the frame
+        // boundary would smear into the next one.
+        for frame in 0..2 {
+            let col_44 = frame * FRAME_WIDTH + 44;
+            let byte = bytes[(col_44 / 8) * BADGE_HEIGHT];
+            assert_eq!(byte & 0x0F, 0, "columns 44-47 of frame {frame} must be padding");
+        }
+    }
+
+    /// A project made before the change still encodes to the same bytes.
+    #[test]
+    fn wide_frames_still_encode_identically() {
+        let narrow = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
+        let mut wide = narrow.clone();
+        for row in wide.iter_mut() {
+            row.resize(FRAME_WIDTH, false);
+        }
+        assert_eq!(
+            frames_to_bitmap(&vec![narrow.clone(), narrow]),
+            frames_to_bitmap(&vec![wide.clone(), wide]),
+        );
+    }
+}
+
+#[cfg(test)]
+mod brightness_tests {
+    use super::*;
+
+    /// Brightness is header byte 5, sent with every upload. It is the one
+    /// display setting that applies to the whole badge rather than a message.
+    #[test]
+    fn brightness_lands_in_header_byte_5() {
+        let frame = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
+        let (bitmap, columns) = pixels_to_bitmap(&frame);
+        for (percent, expected) in [(100u8, 0x00u8), (75, 0x10), (50, 0x20), (25, 0x40)] {
+            let m = Message {
+                bitmap: bitmap.clone(),
+                columns,
+                mode: Mode::Fixed,
+                speed: 4,
+                blink: false,
+                ants: false,
+            };
+            let out = pack(&[m], percent, Stamp::now()).unwrap();
+            assert_eq!(out[5], expected, "{percent}% should encode as {expected:#04x}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod text_length_tests {
+    use super::*;
+
+    /// Every glyph is 8px, which is exactly one byte column, so a character
+    /// count and a byte-column count are the same number for text.
+    #[test]
+    fn how_much_text_fits() {
+        let render = |chars: usize| {
+            let (bitmap, columns) = pixels_to_bitmap(&vec![vec![true; chars * 8]; BADGE_HEIGHT]);
+            Message {
+                bitmap,
+                columns,
+                mode: Mode::ScrollLeft,
+                speed: 4,
+                blink: false,
+                ants: false,
+            }
+        };
+
+        // The device buffer is the hard ceiling for one upload.
+        assert!(pack(&[render(MAX_BYTE_COLUMNS)], 100, Stamp::now()).is_ok());
+        assert!(pack(&[render(MAX_BYTE_COLUMNS + 1)], 100, Stamp::now()).is_err());
+
+        // It is a shared budget: eight messages draw on the same buffer.
+        let each = MAX_BYTE_COLUMNS / 8;
+        let eight: Vec<Message> = (0..8).map(|_| render(each)).collect();
+        assert!(pack(&eight, 100, Stamp::now()).is_ok());
+
+        println!("hard ceiling: {MAX_BYTE_COLUMNS} characters in one upload");
+        println!("  = {} bytes", HEADER_SIZE + MAX_BYTE_COLUMNS * BADGE_HEIGHT);
+        println!("split across 8 messages: {each} characters each");
     }
 }

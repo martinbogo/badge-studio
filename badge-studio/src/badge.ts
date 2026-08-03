@@ -59,13 +59,19 @@ export function isEmpty(f: Frame): boolean {
   return f.every((row) => row.every((p) => !p));
 }
 
-/** Animation mode requires exactly FRAME_WIDTH; other modes are free-width. */
+/**
+ * Animation frames are exactly the width of the display; other modes are free.
+ *
+ * The wire format steps 48 columns per frame, but the panel is 44 LEDs wide, so
+ * the last four are padding that can never light up. The encoder adds them when
+ * packing. Editing them would only ever waste the user's time.
+ */
 export function widthForMode(mode: Mode, current: number): number {
-  return mode === "animation" ? FRAME_WIDTH : current;
+  return mode === "animation" ? BADGE_WIDTH : current;
 }
 
 export function newMessage(mode: Mode = "scroll_left"): Message {
-  const width = mode === "animation" ? FRAME_WIDTH : BADGE_WIDTH;
+  const width = BADGE_WIDTH;
   return {
     id: newId(),
     name: "Untitled",
@@ -481,4 +487,54 @@ export function byteColumns(m: Message): number {
 
 export function totalByteColumns(messages: Message[]): number {
   return messages.reduce((n, m) => n + byteColumns(m), 0);
+}
+
+/** Ticks the firmware holds a fixed-mode message before advancing. */
+const FIXED_DWELL_STEPS = BADGE_WIDTH;
+
+/** One slot's span within the whole-sequence timeline. */
+export interface SequenceSlot {
+  index: number;
+  /** First step of this slot, counting from the start of the sequence. */
+  start: number;
+  steps: number;
+}
+
+/**
+ * How the badge cycles its slots: each one plays exactly one full pass, then
+ * hands over to the next, wrapping at the end.
+ *
+ * Speed is per message, so the tick interval changes as the sequence moves
+ * between slots. That is why this returns spans rather than a flat step count.
+ */
+export function sequenceSlots(messages: Message[]): SequenceSlot[] {
+  let start = 0;
+  return messages.map((m, index) => {
+    // A still has one frame to show but the firmware dwells on it for a display
+    // width of ticks before moving on. Without that it would flash past in a
+    // single step here while lasting seconds on the badge.
+    const steps = m.mode === "fixed" ? FIXED_DWELL_STEPS : previewPeriod(m);
+    const slot = { index, start, steps };
+    start += steps;
+    return slot;
+  });
+}
+
+export function sequenceLength(slots: SequenceSlot[]): number {
+  const last = slots[slots.length - 1];
+  return last ? last.start + last.steps : 1;
+}
+
+/** Which slot a whole-sequence step falls in, and how far into it. */
+export function sequenceAt(
+  slots: SequenceSlot[],
+  step: number
+): { slot: SequenceSlot; local: number } | null {
+  for (const slot of slots) {
+    if (step < slot.start + slot.steps) {
+      return { slot, local: step - slot.start };
+    }
+  }
+  const last = slots[slots.length - 1];
+  return last ? { slot: last, local: last.steps - 1 } : null;
 }

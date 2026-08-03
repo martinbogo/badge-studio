@@ -29,6 +29,7 @@
 import {
   ANIMATION_MAX_FRAMES,
   BADGE_HEIGHT,
+  BADGE_WIDTH,
   MAX_MESSAGES,
   MODES,
   type Brightness,
@@ -105,6 +106,16 @@ function readMessage(raw: unknown, index: number): Message {
         `${BADGE_HEIGHT} rows of ${width} pixels.`
     );
   }
+  // Projects saved before the editor moved to display width hold 48px frames,
+  // the last four columns of which the badge cannot show. Trim them so what is
+  // on screen is what will appear.
+  let out = frames.map((f) => f.map((row) => row.map(Boolean)));
+  let w = width;
+  if (mode === "animation" && w > BADGE_WIDTH) {
+    out = out.map((f) => f.map((row) => row.slice(0, BADGE_WIDTH)));
+    w = BADGE_WIDTH;
+  }
+
   if (mode === "animation" && frames.length > ANIMATION_MAX_FRAMES) {
     throw new DocError(
       `${where} has ${frames.length} frames; a slot holds ${ANIMATION_MAX_FRAMES}.`
@@ -118,8 +129,8 @@ function readMessage(raw: unknown, index: number): Message {
     speed: typeof m.speed === "number" && m.speed >= 1 && m.speed <= 8 ? m.speed : 4,
     blink: Boolean(m.blink),
     ants: Boolean(m.ants),
-    frames: frames.map((f) => f.map((row) => row.map(Boolean))),
-    width,
+    frames: out,
+    width: w,
   };
 }
 

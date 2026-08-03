@@ -198,12 +198,58 @@ body {
   background: var(--line);
 }
 
+/* Centre a canvas narrower than the panel, but only when it fits. Plain
+   `center` puts the overflow of a wide bitmap half off the left edge where no
+   amount of scrolling can reach it; `safe` falls back to start in that case. */
+/* Positioning context for the overflow hints, which have to sit over the
+   scrolling area rather than scroll with it. */
+.canvas-scroller {
+  position: relative;
+}
+
 .canvas-wrap {
   background: #0d0f15;
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 4px;
   overflow-x: auto;
+  display: flex;
+  justify-content: safe center;
+}
+
+/* "The drawing carries on this way." A bitmap wider than the panel is cut off
+   with no seam to show for it, so the edge reads as the end of the artwork
+   rather than the end of the view. */
+.canvas-more {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 26px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg);
+  /* Over the lit pixels as well as the unlit ones, so the arrow stays legible
+     wherever the bitmap happens to be dense. */
+  text-shadow: 0 0 3px #0d0f15, 0 0 3px #0d0f15;
+}
+
+.canvas-more.left {
+  left: 1px;
+  justify-content: flex-start;
+  padding-left: 3px;
+  border-radius: 5px 0 0 5px;
+  background: linear-gradient(to right, #0d0f15 30%, transparent);
+}
+
+.canvas-more.right {
+  right: 1px;
+  justify-content: flex-end;
+  padding-right: 3px;
+  border-radius: 0 5px 5px 0;
+  background: linear-gradient(to left, #0d0f15 30%, transparent);
 }
 
 .pixel-canvas {
@@ -556,11 +602,17 @@ p {
 
 /* --- preview strip --- */
 
+/* Preview with its transport underneath, the way a player is laid out. */
 .preview-strip {
   display: flex;
-  justify-content: center;
-  padding: 4px 0 10px;
-  border-bottom: 1px solid var(--line);
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: #07090d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  margin-bottom: 2px;
 }
 
 /* --- transport bar --- */
@@ -594,13 +646,27 @@ p {
 }
 
 .transport-btn {
-  width: 32px;
-  height: 30px;
+  width: 30px;
+  height: 28px;
   padding: 0;
   display: grid;
   place-items: center;
   font-size: 12px;
   line-height: 1;
+}
+
+/* One height for everything in the bottom bar, so the row reads as a row
+   rather than as controls of assorted sizes. */
+.transport-main button,
+.transport-main select,
+.transport-main .transport-chip {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.transport-main .group-tag {
+  align-self: center;
 }
 
 .tabular {
@@ -609,9 +675,28 @@ p {
 }
 
 .capacity-bar.wide {
-  flex: 1;
-  max-width: 220px;
-  min-width: 60px;
+  flex: none;
+  width: 96px;
+}
+
+/* Boxed like the controls beside it. A bare number and a floating bar were the
+   only things in the row without an edge, which read as a gap. */
+.payload-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* The scrub bar takes the slack, so everything after it has to hold its width
+   rather than wrap into two and three lines. */
+.tgroup.payload {
+  flex: none;
+  white-space: nowrap;
 }
 
 .device-select {
@@ -715,10 +800,32 @@ button.record.armed .record-dot {
 .scrub {
   -webkit-appearance: none;
   appearance: none;
-  width: 150px;
+  flex: 1 1 auto;
+  min-width: 140px;
   height: 14px;
   background: transparent;
   cursor: pointer;
+}
+
+/* Playback sits directly under the preview it drives. The scrub bar takes the
+   slack, because a 64-frame sequence is unusable to scrub at a fixed width. */
+.playback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 760px;
+  padding-top: 6px;
+}
+
+.playback .scrub {
+  flex: 1 1 auto;
+}
+
+.playback-pos {
+  min-width: 116px;
+  text-align: right;
+  font-size: 11px;
 }
 
 .scrub:disabled {
@@ -867,14 +974,6 @@ button.active {
 
 /* The preview is the device; the canvas is the workspace. Sinking the preview
    into a darker inset keeps two similar dot grids from reading as the same. */
-.preview-strip {
-  background: #07090d;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 0;
-  margin-bottom: 2px;
-}
-
 .transport-detail {
   position: relative;
 }
@@ -958,4 +1057,14 @@ button.active {
 .modal-actions button.danger {
   border-color: #7a3b3b;
   color: #ff8b7a;
+}
+
+/* The slot the preview is currently playing, which in sequence mode is usually
+   not the one being edited. */
+.slot-list li.playing {
+  border-color: var(--blue);
+}
+
+.slot-list li.playing .slot-index {
+  color: var(--blue);
 }

@@ -118,24 +118,57 @@ fn encode(specs: &[MessageSpec], brightness: u8) -> Result<Vec<u8>, String> {
     protocol::pack(&messages, brightness, protocol::Stamp::now()).map_err(|e| e.to_string())
 }
 
+/// One face, as the editor needs to know it.
+#[derive(serde::Serialize)]
+struct FaceInfo {
+    id: String,
+    name: String,
+    notice: String,
+    /// Whether to offer this face in the picker. Every face is sent either
+    /// way, because measuring has to follow the same fallback chain the
+    /// renderer does.
+    pickable: bool,
+    /// Pixel advance per character this face can draw. Sent whole so the
+    /// editor can measure a string without a round trip per keystroke.
+    advances: Vec<(char, usize)>,
+}
+
+/// Hand the faces' own widths to the editor so it can budget typing against
+/// the width a string will actually occupy rather than its character count.
+///
+/// Order matters: it is the fallback order, so the editor resolves a glyph the
+/// same way `font::layout` does. Measuring one way and drawing another is how
+/// an editor comes to accept a string that will not fit.
 #[tauri::command]
-fn render_text(text: String) -> TextBitmap {
-    let (bitmap, columns, missing) = font::text_to_bitmap(&text);
-    let width = columns * 8;
-    let mut rows = vec![vec![false; width]; protocol::BADGE_HEIGHT];
-    for col in 0..columns {
-        for row in 0..protocol::BADGE_HEIGHT {
-            let byte = bitmap[col * protocol::BADGE_HEIGHT + row];
-            for bit in 0..8 {
-                rows[row][col * 8 + bit] = (byte >> (7 - bit)) & 1 == 1;
-            }
-        }
-    }
+fn font_metrics() -> Vec<FaceInfo> {
+    font::FACES
+        .iter()
+        .map(|f| FaceInfo {
+            id: f.id.to_string(),
+            name: f.name.to_string(),
+            notice: f.notice.to_string(),
+            pickable: f.pickable,
+            advances: f
+                .glyphs
+                .iter()
+                .map(|(c, g)| (*c, g.advance as usize))
+                .collect(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn render_text(text: String, face: Option<String>) -> TextBitmap {
+    let chosen = face
+        .as_deref()
+        .and_then(font::face)
+        .unwrap_or_else(|| font::face(font::DEFAULT_FACE).expect("default face"));
+    let l = font::layout(chosen, &text);
     TextBitmap {
-        rows,
-        columns,
-        width,
-        missing,
+        columns: l.width.div_ceil(8),
+        width: l.width,
+        rows: l.rows,
+        missing: l.missing,
     }
 }
 
@@ -343,6 +376,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             render_text,
+            font_metrics,
             encode_summary,
             pick_image,
             ble_status,
@@ -475,8 +509,15 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_face_falls_back_to_the_default() {
+        let a = render_text("HI".into(), Some("no-such-face".into()));
+        let b = render_text("HI".into(), None);
+        assert_eq!(a.rows, b.rows, "a stale face id must not blank the stamp");
+    }
+
+    #[test]
     fn render_text_round_trips_through_the_font() {
-        let out = render_text("HI".into());
+        let out = render_text("HI".into(), None);
         assert_eq!(out.columns, 2);
         assert_eq!(out.width, 16);
         assert_eq!(out.rows.len(), protocol::BADGE_HEIGHT);

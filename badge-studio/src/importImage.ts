@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { BADGE_HEIGHT, FRAME_WIDTH, type Frame } from "./types";
+import { BADGE_HEIGHT, BADGE_WIDTH, type Frame } from "./types";
 
 export interface ImportOptions {
   /** Luminance above this counts as a lit pixel, 0..255. */
@@ -42,7 +42,7 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
  * Convert an image into badge frames.
  *
  * Images that are not 11px tall are scaled to fit, preserving aspect ratio.
- * In frame mode the image is cut into FRAME_WIDTH-wide slices, which is the
+ * In frame mode the image is cut into display-width slices, which is the
  * filmstrip convention the badge firmware expects for mode 5.
  */
 export async function importImage(
@@ -84,17 +84,17 @@ export async function importImage(
     return { frames: [frame], width, scaledFrom };
   }
 
-  const count = Math.max(1, Math.ceil(width / FRAME_WIDTH));
+  const count = Math.max(1, Math.ceil(width / BADGE_WIDTH));
   const frames: Frame[] = [];
   for (let f = 0; f < count; f++) {
     frames.push(
       Array.from({ length: BADGE_HEIGHT }, (_, y) =>
-        Array.from({ length: FRAME_WIDTH }, (_, x) => {
-          const sx = f * FRAME_WIDTH + x;
+        Array.from({ length: BADGE_WIDTH }, (_, x) => {
+          const sx = f * BADGE_WIDTH + x;
           return sx < width ? lit(sx, y) : false;
         })
       )
     );
   }
-  return { frames, width: FRAME_WIDTH, scaledFrom };
+  return { frames, width: BADGE_WIDTH, scaledFrom };
 }

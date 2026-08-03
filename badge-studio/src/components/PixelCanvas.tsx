@@ -87,7 +87,7 @@ export default function PixelCanvas({
   onSelectionChange,
   onChange,
   showViewport = true,
-  maxCell = 12,
+  maxCell = 26,
   led,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -103,12 +103,16 @@ export default function PixelCanvas({
   // costs every live preview: shapes, the selection marquee, and the lifted
   // block while a selection is being moved.
   const [tick, setTick] = useState(0);
+  const [more, setMore] = useState({ left: false, right: false });
 
   const width = frame[0]?.length ?? BADGE_WIDTH;
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
+    // Fill the width available. The cap only stops a narrow bitmap growing so
+    // tall that it crowds out the frame timeline below it; a wide one hits the
+    // 5px floor first and scrolls instead.
     const fit = () => {
       const avail = el.clientWidth - 8;
       setCell(Math.max(5, Math.min(maxCell, Math.floor(avail / width))));
@@ -118,6 +122,31 @@ export default function PixelCanvas({
     ro.observe(el);
     return () => ro.disconnect();
   }, [width, maxCell]);
+
+  // Whether the bitmap continues past either edge. A canvas wider than the
+  // panel scrolls, and nothing about a cropped grid of pixels says so: it just
+  // looks like the drawing ends there. Recomputed on scroll and on resize
+  // because both change the answer.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => {
+      // A subpixel of slack: fractional scroll positions at the far end would
+      // otherwise leave the arrow showing with nothing left to reach.
+      const end = el.scrollWidth - el.clientWidth;
+      setMore({ left: el.scrollLeft > 1, right: el.scrollLeft < end - 1 });
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+    // `cell` and `width` between them decide the canvas width, so a change to
+    // either can start or stop the overflow without any scrolling happening.
+  }, [width, cell]);
 
   /** Points a shape tool would set, given the current drag. */
   const shapePoints = useCallback(
@@ -392,16 +421,32 @@ export default function PixelCanvas({
   };
 
   return (
-    <div className="canvas-wrap" ref={wrapRef}>
-      <canvas
-        ref={canvasRef}
-        className={`pixel-canvas tool-${tool}`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={finish}
-        onPointerCancel={finish}
-        onContextMenu={(e) => e.preventDefault()}
-      />
+    <div className="canvas-scroller">
+      <div className="canvas-wrap" ref={wrapRef}>
+        <canvas
+          ref={canvasRef}
+          className={`pixel-canvas tool-${tool}`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+          onContextMenu={(e) => e.preventDefault()}
+        />
+      </div>
+      {/* Hidden from assistive tech and from the pointer: purely a hint that
+          the bitmap continues past the edge. Made clickable it would swallow
+          the leftmost and rightmost columns of a drawing surface, which is a
+          bad trade for a scroll the trackpad already does. */}
+      {more.left && (
+        <div className="canvas-more left" aria-hidden="true">
+          <span>‹</span>
+        </div>
+      )}
+      {more.right && (
+        <div className="canvas-more right" aria-hidden="true">
+          <span>›</span>
+        </div>
+      )}
     </div>
   );
 }

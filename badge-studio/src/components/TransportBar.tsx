@@ -27,17 +27,6 @@ interface Props {
   messages: Message[];
   brightness: Brightness;
   onBrightness: (b: Brightness) => void;
-  playing: boolean;
-  onTogglePlay: () => void;
-  onRestart: () => void;
-  /** "frame 3 / 8" in animation mode, "still" for fixed, null otherwise. */
-  frameLabel: string | null;
-  /** Current position in the preview loop, and how many steps it runs for. */
-  step: number;
-  period: number;
-  /** Scrub to an absolute step, or jog by a relative number of steps. */
-  onScrub: (step: number) => void;
-  onJog: (delta: number) => void;
 }
 
 interface Progress {
@@ -50,6 +39,9 @@ interface UsbInfo {
   product: string | null;
   serial: string | null;
 }
+
+/** The largest upload confirmed to transfer, as bytes rather than columns. */
+const BUDGET_BYTES = 64 + KNOWN_GOOD_COLUMNS * 11;
 
 /** Rust pushes this whenever the badge is plugged in or unplugged. */
 const USB_PRESENCE = "usb-presence";
@@ -85,14 +77,6 @@ export default function TransportBar({
   messages,
   brightness,
   onBrightness,
-  playing,
-  onTogglePlay,
-  onRestart,
-  frameLabel,
-  step,
-  period,
-  onScrub,
-  onJog,
 }: Props) {
   const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -265,68 +249,20 @@ export default function TransportBar({
   return (
     <div className="transport">
       <div className="transport-main">
-        <div className="tgroup">
-          <button
-            className="transport-btn"
-            onClick={onTogglePlay}
-            title={playing ? "Pause preview (Space)" : "Play preview (Space)"}
-            aria-label={playing ? "Pause preview" : "Play preview"}
-          >
-            {playing ? "❚❚" : "▶"}
-          </button>
-          <button
-            className="transport-btn"
-            onClick={onRestart}
-            title="Back to the first step"
-            aria-label="Restart preview"
-          >
-            ⏮
-          </button>
-          <button
-            className="transport-btn"
-            onClick={() => onJog(-1)}
-            disabled={period <= 1}
-            title="Previous step (Left arrow)"
-            aria-label="Previous step"
-          >
-            ‹
-          </button>
-          <button
-            className="transport-btn"
-            onClick={() => onJog(1)}
-            disabled={period <= 1}
-            title="Next step (Right arrow)"
-            aria-label="Next step"
-          >
-            ›
-          </button>
-          {/* One scrub bar covers every mode: animation frames, scroll
-              position, effect position. Dragging it pauses the preview. */}
-          <input
-            type="range"
-            className="scrub"
-            min={0}
-            max={Math.max(0, period - 1)}
-            value={Math.min(step, Math.max(0, period - 1))}
-            disabled={period <= 1}
-            onChange={(e) => onScrub(Number(e.target.value))}
-            title={
-              period > 1
-                ? "Drag to step through the animation"
-                : "Nothing to scrub: this message is a single still"
-            }
-            aria-label="Scrub through the animation"
-          />
-          {frameLabel && <span className="mu tabular">{frameLabel}</span>}
-        </div>
-
         <div className="tgroup payload">
-          <span className={unproven ? "warn" : "mu"}>{bytes} bytes</span>
-          <div className="capacity-bar wide" title={`${used} byte columns`}>
-            <div
-              className={`capacity-fill${unproven ? " over" : ""}`}
-              style={{ width: `${pct}%` }}
-            />
+          <div
+            className="payload-readout"
+            title={`${bytes} bytes of the ${BUDGET_BYTES} the badge reliably accepts.`}
+          >
+            <span className={unproven ? "warn" : "mu"}>
+              {bytes} / {BUDGET_BYTES} bytes
+            </span>
+            <div className="capacity-bar wide">
+              <div
+                className={`capacity-fill${unproven ? " over" : ""}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
           </div>
           {unproven && (
             <span
@@ -339,8 +275,8 @@ export default function TransportBar({
         </div>
 
         <div className="tgroup">
-          <span className="group-tag">Badge</span>
-          <label title="Display brightness on the badge">
+          <label title="How brightly the badge lights its LEDs">
+            Brightness
             <select
               value={brightness}
               onChange={(e) => onBrightness(Number(e.target.value) as Brightness)}
