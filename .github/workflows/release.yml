@@ -115,18 +115,29 @@ jobs:
           tar -czf "${STAGE}.tar.gz" "$STAGE"
           sha256sum "${STAGE}.tar.gz"
 
+      # Collect the installers into one flat directory. Uploading the bundle
+      # paths directly preserves the whole target/release/bundle/... tree inside
+      # the artifact, and the release step then globs directories rather than
+      # files.
+      - name: Stage installers
+        shell: bash
+        run: |
+          mkdir -p staging
+          for d in dmg msi nsis deb rpm appimage; do
+            [ -d "$BUNDLE/$d" ] || continue
+            find "$BUNDLE/$d" -maxdepth 1 -type f \
+              \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \
+                 -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \
+              -exec cp {} staging/ \;
+          done
+          for f in *.tar.gz; do [ -f "$f" ] && cp "$f" staging/; done
+          ls -lh staging
+
       - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.label }}
           if-no-files-found: error
-          path: |
-            ${{ env.BUNDLE }}/dmg/*.dmg
-            ${{ env.BUNDLE }}/msi/*.msi
-            ${{ env.BUNDLE }}/nsis/*.exe
-            ${{ env.BUNDLE }}/deb/*.deb
-            ${{ env.BUNDLE }}/rpm/*.rpm
-            ${{ env.BUNDLE }}/appimage/*.AppImage
-            *.tar.gz
+          path: staging/*
 
   release:
     needs: build
