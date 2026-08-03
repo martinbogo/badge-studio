@@ -6,6 +6,18 @@ badge (WCH CH582, 44x11 monochrome matrix).
 Runs on macOS, Windows and Linux. Uploads over USB or Bluetooth LE using the
 badge's stock firmware. No reflashing is required.
 
+![The editor, with scrolling text](docs/editor.png)
+
+Draw on the grid, or stamp text using the badge's own font. The preview at the
+top shows what the badge will display, animated at its real speed.
+
+![Frame-by-frame animation](docs/animation.png)
+
+Animation mode gives each of the 8 message slots its own 8-frame timeline, with
+onion skinning showing the previous frame behind the current one. The dashed
+outline marks the 44px the badge actually shows, since animation frames are
+48px wide.
+
 ## Features
 
 **Editing**
