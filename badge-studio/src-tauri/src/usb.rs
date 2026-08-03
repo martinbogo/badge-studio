@@ -66,6 +66,11 @@ pub struct UsbInfo {
     pub manufacturer: Option<String>,
     pub product: Option<String>,
     pub serial: Option<String>,
+    /// Worked out from the three strings above. They come from the platform's
+    /// own device database (IOKit, udev, Windows PnP) rather than from opening
+    /// the device, so this is known before any permission question arises and
+    /// on Linux does not depend on the udev rule.
+    pub firmware: crate::firmware::Firmware,
 }
 
 fn api() -> Result<HidApi, UsbError> {
@@ -78,6 +83,11 @@ pub fn find() -> Result<Option<UsbInfo>, UsbError> {
     Ok(devices
         .filter(|d| d.vendor_id() == VID && d.product_id() == PID)
         .map(|d| UsbInfo {
+            firmware: crate::firmware::identify([
+                d.manufacturer_string(),
+                d.product_string(),
+                d.serial_number(),
+            ]),
             manufacturer: d.manufacturer_string().map(str::to_string),
             product: d.product_string().map(str::to_string),
             serial: d.serial_number().map(str::to_string),

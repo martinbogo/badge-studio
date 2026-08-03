@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { byteColumns } from "../badge";
 import {
+  FRAME_WIDTH,
   KNOWN_GOOD_COLUMNS,
   type BadgeInfo,
   type Brightness,
@@ -34,11 +35,21 @@ interface Progress {
   total: number;
 }
 
+/** Matches Rust's `Firmware`, serialised kebab-case. */
+type Firmware = "stock" | "badge-magic";
+
 interface UsbInfo {
   manufacturer: string | null;
   product: string | null;
   serial: string | null;
+  /** Read off the USB descriptors, not configured. */
+  firmware: Firmware;
 }
+
+const FIRMWARE_LABEL: Record<Firmware, string> = {
+  stock: "stock firmware",
+  "badge-magic": "badgemagic firmware",
+};
 
 /** The largest upload confirmed to transfer, as bytes rather than columns. */
 const BUDGET_BYTES = 64 + KNOWN_GOOD_COLUMNS * 11;
@@ -124,7 +135,11 @@ export default function TransportBar({
     };
   }, []);
 
-  const used = messages.reduce((n, m) => n + byteColumns(m), 0);
+  // badgemagic advances 44 columns per animation frame where the stock
+  // firmware advances 48, so the same document is a different payload on the
+  // two. Until a badge says otherwise the readout assumes stock.
+  const stride = usb?.firmware === "badge-magic" ? 44 : FRAME_WIDTH;
+  const used = messages.reduce((n, m) => n + byteColumns(m, stride), 0);
   const bytes = 64 + used * 11;
   const unproven = used > KNOWN_GOOD_COLUMNS;
   const pct = Math.min(100, Math.round((used / KNOWN_GOOD_COLUMNS) * 100));
@@ -293,9 +308,9 @@ export default function TransportBar({
             // Nothing to configure on this path, so say what it found and stop.
             <span
               className="transport-chip"
-              title={`${usb.manufacturer ?? "unknown"} ${usb.product ?? ""}, connected over USB. Bluetooth is not needed while the cable is in.`}
+              title={`${usb.manufacturer ?? "unknown"} ${usb.product ?? ""}, running the ${FIRMWARE_LABEL[usb.firmware]}, connected over USB. Bluetooth is not needed while the cable is in.`}
             >
-              USB
+              USB{usb.firmware === "badge-magic" ? " \u00b7 badgemagic" : ""}
             </span>
           ) : (
             <button onClick={onScan} disabled={busy !== null}>

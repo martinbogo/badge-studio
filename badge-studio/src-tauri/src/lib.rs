@@ -14,6 +14,7 @@
 
 mod ble;
 mod files;
+mod firmware;
 mod menu;
 mod usb;
 mod font;
@@ -22,6 +23,7 @@ mod protocol;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use firmware::Firmware;
 use protocol::{Message, Mode};
 
 /// One badge message slot as described by the UI.
@@ -77,7 +79,7 @@ struct Progress {
     total: usize,
 }
 
-fn to_messages(specs: &[MessageSpec]) -> Result<Vec<Message>, String> {
+fn to_messages(specs: &[MessageSpec], fw: Firmware) -> Result<Vec<Message>, String> {
     if specs.is_empty() {
         return Err("Add at least one message before sending.".into());
     }
@@ -94,7 +96,7 @@ fn to_messages(specs: &[MessageSpec]) -> Result<Vec<Message>, String> {
                     }
                     .to_string());
                 }
-                protocol::frames_to_bitmap(&s.frames)
+                protocol::frames_to_bitmap(&s.frames, fw.animation_stride())
             } else {
                 protocol::pixels_to_bitmap(&s.frames[0])
             };
@@ -113,8 +115,8 @@ fn to_messages(specs: &[MessageSpec]) -> Result<Vec<Message>, String> {
         .collect()
 }
 
-fn encode(specs: &[MessageSpec], brightness: u8) -> Result<Vec<u8>, String> {
-    let messages = to_messages(specs)?;
+fn encode(specs: &[MessageSpec], brightness: u8, fw: Firmware) -> Result<Vec<u8>, String> {
+    let messages = to_messages(specs, fw)?;
     protocol::pack(&messages, brightness, protocol::Stamp::now()).map_err(|e| e.to_string())
 }
 
@@ -177,8 +179,12 @@ fn encode_summary(
     messages: Vec<MessageSpec>,
     brightness: u8,
     chunk_size: usize,
+    firmware: Option<Firmware>,
 ) -> Result<EncodeSummary, String> {
-    let data = encode(&messages, brightness)?;
+    // The stride changes the payload size, so the capacity readout is a
+    // different number on the two firmwares. Default to stock until the UI
+    // has been told otherwise.
+    let data = encode(&messages, brightness, firmware.unwrap_or_default())?;
     let payload = data.len() - protocol::HEADER_SIZE;
     let header_hex = data[..protocol::HEADER_SIZE]
         .chunks(16)
@@ -267,7 +273,13 @@ async fn send_to_badge_usb(
     messages: Vec<MessageSpec>,
     brightness: u8,
 ) -> Result<usize, SendError> {
-    let data = encode(&messages, brightness).map_err(|message| SendError { message })?;
+    // Ask the device rather than trusting whatever the UI last saw: the badge
+    // may have been swapped since.
+    let fw = usb::find()
+        .map_err(|e| SendError { message: e.to_string() })?
+        .map(|i| i.firmware)
+        .unwrap_or_default();
+    let data = encode(&messages, brightness, fw).map_err(|message| SendError { message })?;
 
     // hidapi is blocking, so keep it off the async runtime's threads.
     tokio::task::spawn_blocking(move || {
@@ -294,7 +306,11 @@ async fn send_to_badge(
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    let data = encode(&messages, brightness).map_err(|message| SendError { message })?;
+    // Encoded twice over: once here to size the progress bar and reject a bad
+    // document before connecting, then again inside the send once the badge has
+    // said which firmware it runs. The second answer is the one transmitted.
+    let data = encode(&messages, brightness, Firmware::default())
+        .map_err(|message| SendError { message })?;
     let total_bytes = data.len();
     let total_writes = total_bytes.div_ceil(ble::CHUNK_SIZE);
 
@@ -307,8 +323,10 @@ async fn send_to_badge(
     let seen = progress.clone();
     let emitter = app.clone();
 
+    let spec = messages;
     let task = tokio::spawn(async move {
-        ble::send(&data, device_id.as_deref(), |chunk, total| {
+        let encode_for = move |fw: Firmware| encode(&spec, brightness, fw);
+        ble::send(encode_for, device_id.as_deref(), |chunk, total| {
             seen.store(chunk, Ordering::Relaxed);
             let _ = emitter.emit("send-progress", Progress { chunk, total });
         })
@@ -325,7 +343,7 @@ async fn send_to_badge(
         match tokio::time::timeout(tick, &mut task).await {
             Ok(joined) => {
                 return match joined {
-                    Ok(Ok(())) => Ok(total_bytes),
+                    Ok(Ok(_fw)) => Ok(total_bytes),
                     Ok(Err(message)) => Err(SendError { message }),
                     Err(_) => Err(SendError {
                         message: "The transfer task stopped unexpectedly.".into(),
@@ -487,7 +505,7 @@ mod tests {
             blink: false,
             ants: false,
         };
-        let msgs = to_messages(&[spec]).unwrap();
+        let msgs = to_messages(&[spec], Firmware::default()).unwrap();
         // 3 frames padded to 48px = 144px = 18 byte columns
         assert_eq!(msgs[0].columns, 18);
     }
@@ -501,7 +519,7 @@ mod tests {
             blink: false,
             ants: false,
         };
-        let msgs = to_messages(&[spec]).unwrap();
+        let msgs = to_messages(&[spec], Firmware::default()).unwrap();
         assert_eq!(
             msgs[0].columns, 10,
             "80px = 10 byte columns, second frame ignored"
@@ -538,7 +556,7 @@ mod tests {
             blink: false,
             ants: false,
         };
-        let s = encode_summary(vec![spec], 100, 16).unwrap();
+        let s = encode_summary(vec![spec], 100, 16, None).unwrap();
         assert_eq!(s.byte_columns, 6);
         assert_eq!(s.capacity_columns, protocol::MAX_BYTE_COLUMNS);
         assert_eq!(s.total_bytes, 64 + 66);
@@ -547,6 +565,6 @@ mod tests {
 
     #[test]
     fn empty_input_is_rejected_with_a_readable_message() {
-        assert!(encode(&[], 100).is_err());
+        assert!(encode(&[], 100, Firmware::default()).is_err());
     }
 }

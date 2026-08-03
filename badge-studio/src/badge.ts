@@ -478,15 +478,21 @@ export function stepDelay(speed: number): number {
 
 // --- capacity -------------------------------------------------------------
 
-export function byteColumns(m: Message): number {
+export function byteColumns(m: Message, stride: number = FRAME_WIDTH): number {
   if (m.mode === "animation") {
-    return (m.frames.length * FRAME_WIDTH) / 8;
+    // Rounded up, because 44 does not divide by 8 and an odd frame count
+    // therefore leaves a part-full byte column. The encoder pads it, so the
+    // readout has to count it.
+    return Math.ceil((m.frames.length * stride) / 8);
   }
   return Math.ceil((m.frames[0]?.[0]?.length ?? 0) / 8);
 }
 
-export function totalByteColumns(messages: Message[]): number {
-  return messages.reduce((n, m) => n + byteColumns(m), 0);
+export function totalByteColumns(
+  messages: Message[],
+  stride: number = FRAME_WIDTH
+): number {
+  return messages.reduce((n, m) => n + byteColumns(m, stride), 0);
 }
 
 /** Ticks the firmware holds a fixed-mode message before advancing. */

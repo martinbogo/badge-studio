@@ -225,13 +225,18 @@ pub fn pixels_to_bitmap(rows: &[Vec<bool>]) -> (Vec<u8>, usize) {
 }
 
 /// Concatenate animation frames horizontally into a single mode-5 filmstrip.
-/// Each frame is `BADGE_HEIGHT` rows; rows are padded or truncated to `FRAME_WIDTH`.
-pub fn frames_to_bitmap(frames: &[Vec<Vec<bool>>]) -> (Vec<u8>, usize) {
+/// Each frame is `BADGE_HEIGHT` rows, padded or truncated to `stride`.
+///
+/// The stride is the firmware's, not the display's: the stock firmware
+/// advances 48 columns per frame even though only 44 light up, and badgemagic
+/// advances its real 44. Pad to the wrong one and every frame after the first
+/// lands further sideways than the last.
+pub fn frames_to_bitmap(frames: &[Vec<Vec<bool>>], stride: usize) -> (Vec<u8>, usize) {
     let mut strip: Vec<Vec<bool>> = vec![Vec::new(); BADGE_HEIGHT];
     for f in frames {
         for row in 0..BADGE_HEIGHT {
             let src = f.get(row);
-            for x in 0..FRAME_WIDTH {
+            for x in 0..stride {
                 strip[row].push(src.and_then(|r| r.get(x)).copied().unwrap_or(false));
             }
         }
@@ -295,7 +300,7 @@ mod tests {
     #[test]
     fn filmstrip_is_frame_width_per_frame() {
         let frame = vec![vec![true; FRAME_WIDTH]; BADGE_HEIGHT];
-        let (buf, cols) = frames_to_bitmap(&[frame.clone(), frame]);
+        let (buf, cols) = frames_to_bitmap(&[frame.clone(), frame], FRAME_WIDTH);
         assert_eq!(cols, 2 * FRAME_WIDTH / 8, "6 byte columns per frame");
         assert_eq!(buf.len(), cols * BADGE_HEIGHT);
         assert!(buf.iter().all(|&b| b == 0xFF));
@@ -319,6 +324,64 @@ mod tests {
 }
 
 #[cfg(test)]
+mod stride_tests {
+    use super::*;
+
+    /// badgemagic advances 44 columns per animation frame, the stock firmware
+    /// 48. Padding to the wrong one walks every frame sideways, which looks
+    /// like a corrupt animation rather than a configuration mistake.
+    #[test]
+    fn the_stride_decides_the_payload_size() {
+        let frame = vec![vec![true; 44]; BADGE_HEIGHT];
+        let two = vec![frame.clone(), frame];
+        let (_, stock) = frames_to_bitmap(&two, 48);
+        let (_, magic) = frames_to_bitmap(&two, 44);
+        assert_eq!(stock, 2 * 48 / 8);
+        assert_eq!(magic, 2 * 44 / 8);
+    }
+
+    /// At a 44 stride the frames are not byte-aligned, and that is not a bug
+    /// to fix but a fact to know.
+    ///
+    /// 48 divides by 8, so on stock firmware every frame starts on a fresh
+    /// byte column. 44 does not, so on badgemagic frame two begins four pixels
+    /// into byte column five. The wire format is happy with that, since the
+    /// header declares a count of byte columns and the firmware works in
+    /// pixels.
+    #[test]
+    fn a_44_stride_does_not_land_on_byte_boundaries() {
+        let mut a = vec![vec![false; 44]; BADGE_HEIGHT];
+        a[0][43] = true; // last pixel of frame one
+        let mut b = vec![vec![false; 44]; BADGE_HEIGHT];
+        b[0][0] = true; // first pixel of frame two
+        let (bytes, cols) = frames_to_bitmap(&[a, b], 44);
+        assert_eq!(cols, 11, "88px packs into 11 whole byte columns");
+        // Both pixels land in byte column 5: x=43 at bit 4, x=44 at bit 3.
+        let col5 = bytes[5 * BADGE_HEIGHT];
+        assert_eq!(col5, 0b0001_1000, "the frame boundary sits mid-byte");
+    }
+
+    /// An odd number of frames at 44 does not fill a whole number of byte
+    /// columns, so the payload is rounded up and the badge sees a sliver of a
+    /// further frame. Even counts are exact. Worth knowing before anyone
+    /// trusts a three-frame animation on badgemagic.
+    #[test]
+    fn only_even_frame_counts_are_exact_at_44() {
+        for n in 1..=8usize {
+            let frames = vec![vec![vec![false; 44]; BADGE_HEIGHT]; n];
+            let (_, cols) = frames_to_bitmap(&frames, 44);
+            let exact = (44 * n) % 8 == 0;
+            assert_eq!(exact, n % 2 == 0, "n={n}");
+            assert_eq!(cols, (44 * n).div_ceil(8), "n={n}");
+        }
+        // The stock stride never has this problem: 48 is a multiple of 8.
+        for n in 1..=8usize {
+            assert_eq!((48 * n) % 8, 0);
+        }
+    }
+}
+
+#[cfg(test)]
 mod width_tests {
     use super::*;
 
@@ -328,7 +391,7 @@ mod width_tests {
     #[test]
     fn display_width_frames_pack_to_the_wire_stride() {
         let narrow = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
-        let (bytes, cols) = frames_to_bitmap(&vec![narrow.clone(), narrow]);
+        let (bytes, cols) = frames_to_bitmap(&vec![narrow.clone(), narrow], FRAME_WIDTH);
         assert_eq!(cols, 2 * FRAME_WIDTH / 8, "two frames at the 48px stride");
         assert_eq!(bytes.len(), cols * BADGE_HEIGHT);
 
@@ -350,8 +413,8 @@ mod width_tests {
             row.resize(FRAME_WIDTH, false);
         }
         assert_eq!(
-            frames_to_bitmap(&vec![narrow.clone(), narrow]),
-            frames_to_bitmap(&vec![wide.clone(), wide]),
+            frames_to_bitmap(&vec![narrow.clone(), narrow], FRAME_WIDTH),
+            frames_to_bitmap(&vec![wide.clone(), wide], FRAME_WIDTH),
         );
     }
 }

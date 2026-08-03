@@ -24,6 +24,8 @@ use btleplug::platform::{Adapter, Manager, Peripheral};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::firmware::Firmware;
+
 pub const SERVICE_UUID: Uuid = Uuid::from_u128(0x0000fee0_0000_1000_8000_00805f9b34fb);
 pub const CHAR_UUID: Uuid = Uuid::from_u128(0x0000fee1_0000_1000_8000_00805f9b34fb);
 
@@ -34,6 +36,14 @@ pub const CHAR_UUID: Uuid = Uuid::from_u128(0x0000fee1_0000_1000_8000_00805f9b34
 /// Not a tunable. The firmware never acknowledges a larger write, so an
 /// oversized one hangs forever rather than failing.
 pub const CHUNK_SIZE: usize = 16;
+
+/// Device Information Service, and the manufacturer name inside it. Standard
+/// Bluetooth SIG assignments, not badge-specific: badgemagic implements them
+/// and the stock firmware does not, so the read both identifies the firmware
+/// and, by returning nothing, identifies the absence of it.
+const DEVINFO_SERVICE: Uuid = Uuid::from_u128(0x0000180a_0000_1000_8000_00805f9b34fb);
+const MANUFACTURER_CHAR: Uuid = Uuid::from_u128(0x00002a29_0000_1000_8000_00805f9b34fb);
+const MODEL_CHAR: Uuid = Uuid::from_u128(0x00002a24_0000_1000_8000_00805f9b34fb);
 
 const WRITE_TIMEOUT: Duration = Duration::from_secs(8);
 const WRITE_ATTEMPTS: usize = 3;
@@ -52,8 +62,17 @@ pub enum BleError {
          each upload, so press the first button again to re-enter it, then retry."
     )]
     Gone,
+    #[error("{0}")]
+    Message(String),
     #[error("badge does not expose characteristic 0xFEE1 (wrong device, or firmware differs)")]
     NoCharacteristic,
+    #[error(
+        "This badge runs the badgemagic firmware, which requires the four-digit \
+         code shown on its display before it will accept a Bluetooth upload. \
+         Badge Studio cannot send that code yet. Upload over USB instead, which \
+         needs no code."
+    )]
+    NeedsPin,
     #[error(
         "The link dropped after {done} of {total} chunks. The badge leaves Bluetooth \
          mode on a timeout, so a slow upload gets truncated part-way and the badge is \
@@ -155,13 +174,14 @@ async fn find(central: &Adapter, id: Option<&str>) -> Result<Peripheral, BleErro
 /// position across a reconnect. It does not, so a resumed transfer produced a
 /// garbled buffer rather than a finished one. A failed upload has to be redone
 /// from byte zero.
-pub async fn send<F>(
-    data: &[u8],
+pub async fn send<F, E>(
+    encode: E,
     id: Option<&str>,
     mut on_progress: F,
-) -> Result<(), BleError>
+) -> Result<Firmware, BleError>
 where
     F: FnMut(usize, usize),
+    E: FnOnce(Firmware) -> Result<Vec<u8>, String>,
 {
     let central = adapter().await?;
 
@@ -182,11 +202,54 @@ where
             .await
             .map_err(|_| BleError::ConnectTimeout)??;
     }
-    let result = write_all(&peripheral, data, &mut on_progress).await;
+    // Identify before encoding, because the firmware decides the animation
+    // stride and therefore the bytes. Doing it on this connection rather than
+    // in a separate probe matters: the badge leaves Bluetooth mode after an
+    // operation, so a second connection is not something we can count on.
+    peripheral.discover_services().await?;
+    let fw = identify(&peripheral).await;
+
+    if fw.ble_needs_pin() {
+        let _ = peripheral.disconnect().await;
+        return Err(BleError::NeedsPin);
+    }
+
+    let data = match encode(fw) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = peripheral.disconnect().await;
+            return Err(BleError::Message(e));
+        }
+    };
+
+    let result = write_all(&peripheral, &data, &mut on_progress).await;
 
     // Stock firmware only latches the upload once the link drops.
     let _ = peripheral.disconnect().await;
-    result
+    result.map(|()| fw)
+}
+
+/// Read the Device Information Service, if there is one.
+///
+/// Every failure means stock: the service is absent, the characteristic is
+/// unreadable, or the value is not text. None of those is worth surfacing,
+/// because the only badge that answers is the one running badgemagic.
+async fn identify(peripheral: &Peripheral) -> Firmware {
+    let chars = peripheral.characteristics();
+    let mut seen: Vec<String> = Vec::new();
+    for uuid in [MANUFACTURER_CHAR, MODEL_CHAR] {
+        if let Some(c) = chars
+            .iter()
+            .find(|c| c.uuid == uuid && c.service_uuid == DEVINFO_SERVICE)
+        {
+            if let Ok(v) = peripheral.read(c).await {
+                if let Ok(text) = String::from_utf8(v) {
+                    seen.push(text);
+                }
+            }
+        }
+    }
+    crate::firmware::identify(seen.iter().map(|s| Some(s.as_str())))
 }
 
 async fn write_all<F>(
@@ -197,7 +260,6 @@ async fn write_all<F>(
 where
     F: FnMut(usize, usize),
 {
-    peripheral.discover_services().await?;
     let ch = peripheral
         .characteristics()
         .into_iter()
