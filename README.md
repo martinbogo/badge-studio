@@ -58,17 +58,11 @@ Prebuilt packages for each release are on the
 
 macOS builds are Apple Silicon only. Intel Macs need a build from source.
 
-The releases are not code-signed.
+**macOS** releases are signed and notarized, so the app opens with a
+double-click and needs no Gatekeeper workaround.
 
-On **macOS**, Gatekeeper will refuse to open the app and may report it as
-damaged. Clear the quarantine attribute after copying it to Applications:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Badge Studio.app"
-```
-
-On **Windows**, SmartScreen will warn on first run. Choose "More info" and
-then "Run anyway".
+**Windows** releases are not code-signed. SmartScreen warns on first run:
+choose "More info", then "Run anyway".
 
 Linux packages are built against glibc 2.35 (Ubuntu 22.04) and will not run on
 older distributions. Build from source in that case. The `.tar.gz` contains the
