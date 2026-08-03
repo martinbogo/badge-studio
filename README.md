@@ -68,7 +68,9 @@ Text is stamped from bitmap faces drawn for an 11px display:
 
 Every face covers Latin, Cyrillic and accented Latin, so a word never comes out
 half in one face and half in another. Around 40 common emoji are included as
-hand-drawn pictographs and can be typed or pasted into any face. Faces are
+hand-drawn pictographs. **Emoji** in the text bar shows them as the badge will
+draw them; they can also be typed or pasted straight in, from the system picker
+or anywhere else. Faces are
 chosen per stamp rather than per message, so one bitmap can mix them freely.
 
 Faces are authored as pixel art in `fonts/*.face`, not as hex tables. Nobody can

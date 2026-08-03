@@ -1068,3 +1068,46 @@ button.active {
 .slot-list li.playing .slot-index {
   color: var(--blue);
 }
+
+/* --- emoji palette --- */
+
+/* A wall of small sprites, so it wraps and scrolls rather than pushing the
+   canvas off the bottom of the panel. */
+.emoji-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+  margin: 6px 0 2px;
+  padding: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  background: #0d0f15;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.emoji-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  min-width: 0;
+  height: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.emoji-swatch:hover,
+.emoji-swatch:focus-visible {
+  border-color: var(--blue);
+  background: #151a24;
+}
+
+.emoji-swatch canvas {
+  display: block;
+  /* Drawn at whole-pixel scale; smoothing would blur an 11px sprite into mush. */
+  image-rendering: pixelated;
+}

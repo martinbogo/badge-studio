@@ -20,6 +20,7 @@ import Timeline from "./components/Timeline";
 import BadgePreview from "./components/BadgePreview";
 import TransportBar from "./components/TransportBar";
 import PlaybackBar from "./components/PlaybackBar";
+import EmojiPalette from "./components/EmojiPalette";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Modal from "./components/Modal";
@@ -30,7 +31,7 @@ import {
   sequenceSlots,
   stepDelay,
 } from "./badge";
-import { faceList, fitText, loadFontMetrics, measureText } from "./font";
+import { faceList, fitText, loadFontMetrics, measureText, pictographs } from "./font";
 import { importImage } from "./importImage";
 import {
   DocError,
@@ -135,6 +136,11 @@ export default function App() {
   // remeasured with the real widths rather than the 8px assumption.
   const [metricsReady, setMetricsReady] = useState(false);
   const faces = useMemo(() => (metricsReady ? faceList() : []), [metricsReady]);
+  const emoji = useMemo(() => (metricsReady ? pictographs() : []), [metricsReady]);
+  // The palette is off until asked for. It is a wall of sprites, and most
+  // stamps are text.
+  const [showEmoji, setShowEmoji] = useState(false);
+  const textRef = useRef<HTMLInputElement>(null);
   const [textWarning, setTextWarning] = useState<string | null>(null);
   // Insert is a two-button group; only the open one shows its controls.
   const [insert, setInsert] = useState<"text" | "image" | null>(null);
@@ -680,6 +686,30 @@ export default function App() {
     [textInput, faceId, metricsReady]
   );
 
+  /** Drop a pictograph in at the caret, or at the end if the field is not focused. */
+  const insertEmoji = useCallback(
+    (c: string) => {
+      const el = textRef.current;
+      const at = el?.selectionStart ?? textInput.length;
+      const end = el?.selectionEnd ?? at;
+      const next = fitText(
+        textInput.slice(0, at) + c + textInput.slice(end),
+        textBudgetPx,
+        faceId
+      );
+      setTextInput(next);
+      // Put the caret after what was just inserted rather than at the end,
+      // so picking several in a row builds a string in the order they were
+      // clicked.
+      queueMicrotask(() => {
+        const pos = Math.min(at + c.length, next.length);
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+    [textInput, textBudgetPx, faceId]
+  );
+
   const currentJson = useMemo(() => serializeProject(project), [project]);
   const dirty = currentJson !== savedJson;
 
@@ -1209,6 +1239,7 @@ export default function App() {
                     <div className="bar-row insert-panel">
                       <input
                         autoFocus
+                        ref={textRef}
                         placeholder="Text to stamp into this frame"
                         value={textInput}
                         onChange={(e) =>
@@ -1235,6 +1266,16 @@ export default function App() {
                         Insert
                       </button>
                       <button onClick={() => setInsert(null)}>Cancel</button>
+                      {emoji.length > 0 && (
+                        <button
+                          className={showEmoji ? "active" : undefined}
+                          onClick={() => setShowEmoji((v) => !v)}
+                          title="The pictographs the badge can draw"
+                          aria-expanded={showEmoji}
+                        >
+                          Emoji
+                        </button>
+                      )}
                       {faces.length > 1 && (
                         <select
                           value={faceId}
@@ -1256,6 +1297,10 @@ export default function App() {
                         {textPx} / {textBudgetPx} px
                       </span>
                     </div>
+                  )}
+
+                  {insert === "text" && showEmoji && (
+                    <EmojiPalette chars={emoji} led={led} onPick={insertEmoji} />
                   )}
 
                   {insert === "image" && (

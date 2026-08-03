@@ -75,6 +75,18 @@ export function faceList(): { id: string; name: string; notice: string }[] {
 }
 
 /**
+ * Every character the fallback-only faces can draw, in face order.
+ *
+ * These are exactly the glyphs that have no home in the picker: pictographs
+ * that any face can borrow. Reading them off the loaded faces rather than
+ * listing them here means the palette shows what actually ships, and a face
+ * gaining or losing a sprite needs no second edit.
+ */
+export function pictographs(): string[] {
+  return faces.filter((f) => !f.pickable).flatMap((f) => [...f.advances.keys()]);
+}
+
+/**
  * Characters that neither draw nor take up room. Mirrors `font::is_ignorable`.
  *
  * A pasted emoji is rarely one code point: variation selectors, the zero-width
