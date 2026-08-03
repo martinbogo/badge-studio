@@ -52,14 +52,16 @@ impl Firmware {
         }
     }
 
-    /// Whether Bluetooth uploads have to authenticate before the header is
-    /// accepted.
+    /// Whether this firmware has a Bluetooth PIN at all.
     ///
-    /// badgemagic generates a random four-digit code when the badge enters
-    /// BT-PAIRING and shows it on the display. Until those four ASCII digits
-    /// arrive in their own write, a "wang" header is rejected outright. USB
-    /// has no such gate.
-    pub fn ble_needs_pin(self) -> bool {
+    /// Not whether it is switched on. badgemagic's PIN is opt-in, off by
+    /// default, and stored in flash (`badge_cfg.ble_security`), so nothing
+    /// readable from the device says in advance whether a given badge wants
+    /// one. The badge answers by rejecting the first "wang" write, which is
+    /// what its own documentation tells clients to key on. So this only says
+    /// that a rejected header is worth explaining rather than reporting as a
+    /// generic failure. USB has no PIN on either firmware.
+    pub fn ble_may_require_pin(self) -> bool {
         self == Firmware::BadgeMagic
     }
 }
@@ -148,7 +150,7 @@ mod tests {
     fn the_two_firmwares_stride_differently() {
         assert_eq!(Firmware::Stock.animation_stride(), 48);
         assert_eq!(Firmware::BadgeMagic.animation_stride(), 44);
-        assert!(!Firmware::Stock.ble_needs_pin());
-        assert!(Firmware::BadgeMagic.ble_needs_pin());
+        assert!(!Firmware::Stock.ble_may_require_pin());
+        assert!(Firmware::BadgeMagic.ble_may_require_pin());
     }
 }

@@ -67,10 +67,11 @@ pub enum BleError {
     #[error("badge does not expose characteristic 0xFEE1 (wrong device, or firmware differs)")]
     NoCharacteristic,
     #[error(
-        "This badge runs the badgemagic firmware, which requires the four-digit \
-         code shown on its display before it will accept a Bluetooth upload. \
-         Badge Studio cannot send that code yet. Upload over USB instead, which \
-         needs no code."
+        "This badge rejected the upload straight away, and it runs the badgemagic \
+         firmware, so PIN security is probably switched on. Either upload over \
+         USB, which never asks for a code, or turn the PIN off in the badge's \
+         SECURITY menu, or press KEY4 while it is in BT-PAIRING mode to skip the \
+         code for one session. Badge Studio cannot send the code itself yet."
     )]
     NeedsPin,
     #[error(
@@ -209,11 +210,6 @@ where
     peripheral.discover_services().await?;
     let fw = identify(&peripheral).await;
 
-    if fw.ble_needs_pin() {
-        let _ = peripheral.disconnect().await;
-        return Err(BleError::NeedsPin);
-    }
-
     let data = match encode(fw) {
         Ok(d) => d,
         Err(e) => {
@@ -222,7 +218,7 @@ where
         }
     };
 
-    let result = write_all(&peripheral, &data, &mut on_progress).await;
+    let result = write_all(&peripheral, &data, fw, &mut on_progress).await;
 
     // Stock firmware only latches the upload once the link drops.
     let _ = peripheral.disconnect().await;
@@ -255,6 +251,7 @@ async fn identify(peripheral: &Peripheral) -> Firmware {
 async fn write_all<F>(
     peripheral: &Peripheral,
     data: &[u8],
+    fw: Firmware,
     on_progress: &mut F,
 ) -> Result<(), BleError>
 where
@@ -301,6 +298,14 @@ where
             }
         }
         if let Some(e) = last {
+            // A badge that refuses the very first write is refusing the header
+            // itself, which on badgemagic is what an enabled PIN looks like.
+            // Only the first: a failure part-way through is an ordinary
+            // transfer problem, and blaming the PIN for it would send people
+            // to the wrong menu.
+            if i == 0 && fw.ble_may_require_pin() {
+                return Err(BleError::NeedsPin);
+            }
             return Err(e);
         }
         on_progress(i + 1, total);
