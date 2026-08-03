@@ -32,8 +32,16 @@ export const ANIMATION_MAX_FRAMES = 8;
 
 /**
  * Largest payload confirmed to transfer over BLE: all 8 slots at 8 frames each,
- * 4288 bytes over 268 writes. Earlier stalls were a Bluetooth-mode timeout, not
- * a size limit.
+ * 4288 bytes over 268 writes.
+ *
+ * Earlier stalls at 1648 and 4024 bytes were NOT a size limit. The badge had
+ * dropped out of Bluetooth mode mid-transfer, which is a timing failure that
+ * varies with signal strength and how long the badge has been advertising. A
+ * payload this size transfers given a clean window.
+ *
+ * A soft ceiling, not a hard one: it only drives the capacity meter's warning.
+ * The hard limit the encoder enforces is MAX_BYTE_COLUMNS. There is no Rust
+ * counterpart to this constant for that reason.
  */
 export const KNOWN_GOOD_COLUMNS = 384;
 

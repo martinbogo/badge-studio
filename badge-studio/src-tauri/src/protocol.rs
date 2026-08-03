@@ -39,15 +39,6 @@ pub const MAX_BYTE_COLUMNS: usize = (DEVICE_BUFFER - HEADER_SIZE) / BADGE_HEIGHT
 /// Whether a single slot can hold MORE than 8 is still untested.
 pub const ANIMATION_MAX_FRAMES: usize = 8;
 
-/// Largest payload confirmed to transfer successfully over BLE: all 8 slots
-/// holding 8 frames each, 4288 bytes over 268 writes.
-///
-/// Earlier stalls at 1648 and 4024 bytes were NOT a size limit. The badge had
-/// dropped out of Bluetooth mode mid-transfer, which is a timing failure and
-/// varies with signal and how long the badge has been advertising. A payload
-/// this size does transfer given a clean window.
-pub const KNOWN_GOOD_COLUMNS: usize = 384;
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
