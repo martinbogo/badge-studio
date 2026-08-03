@@ -1,0 +1,974 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #12151d;
+  --panel-2: #171b25;
+  --line: #242a37;
+  --text: #dfe3ec;
+  --muted: #7f8899;
+  --accent: #ff4d3d;
+  --accent-dim: #b83527;
+  --blue: #3d7dff;
+  --warn: #ffb020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* --- top bar --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  height: 46px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* --- layout --- */
+
+.body {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 12px 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.panel h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+.editor,
+.slots {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.editor {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Flex items shrink by default. When the transport detail row expands and
+   vertical space gets tight, that squashed the canvas and its overflow-x
+   clipped the lower rows off. Let the column scroll instead. */
+.editor > * {
+  flex: none;
+}
+
+/* --- message slots --- */
+
+.slot-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slot-list li {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.slot-list li:hover {
+  border-color: var(--line);
+}
+
+.slot-list li.active {
+  border-color: var(--accent-dim);
+  background: #1d1418;
+}
+
+.slot-index {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- editor --- */
+
+.bar-row,
+.message-props,
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.text-row {
+  flex-wrap: nowrap;
+}
+
+.text-row input {
+  flex: 1;
+}
+
+.name-input {
+  font-weight: 600;
+  min-width: 130px;
+}
+
+.tools .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+}
+
+.canvas-wrap {
+  background: #0d0f15;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px;
+  overflow-x: auto;
+}
+
+.pixel-canvas {
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* --- timeline --- */
+
+.timeline {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  align-items: center;
+}
+
+.frame-chip {
+  position: relative;
+  flex: none;
+  padding: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.frame-chip.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
+}
+
+.thumb-canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.frame-num {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.frame-add {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  font-size: 17px;
+  padding: 0;
+}
+
+.timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- preview --- */
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+
+/* Sized in JS so both axes scale together; a CSS width clamp here would
+   distort the pixel aspect ratio. */
+.preview-canvas {
+  display: block;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.preview-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- device --- */
+
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.capacity-bar {
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.capacity-fill {
+  height: 100%;
+  background: var(--blue);
+  transition: width 120ms linear;
+}
+
+.capacity-fill.over {
+  background: var(--accent);
+}
+
+.capacity-fill.sending {
+  background: #35c37d;
+}
+
+.device-panel select {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+/* --- controls --- */
+
+button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #38414f;
+  background: #1d2230;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+button.ghost {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 2px 5px;
+}
+
+button.ghost:hover {
+  color: var(--text);
+  background: none;
+}
+
+input,
+select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 7px;
+  font: inherit;
+}
+
+input[type="range"] {
+  padding: 0;
+  width: 96px;
+  accent-color: var(--accent);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+input.num {
+  width: 68px;
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+label.check {
+  cursor: pointer;
+}
+
+label select,
+label input {
+  color: var(--text);
+}
+
+/* --- text --- */
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 11px;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.error {
+  color: var(--accent);
+  font-size: 11px;
+  margin: 6px 0 0;
+  word-break: break-word;
+}
+
+p {
+  margin: 0;
+}
+
+/* --- pairing help --- */
+
+.pairing-steps {
+  margin: 0 0 10px;
+  padding: 9px 10px 9px 26px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--blue);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.pairing-steps li + li {
+  margin-top: 5px;
+}
+
+.pairing-steps strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.check.small {
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.transport {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 8px 0;
+  padding: 9px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.transport label {
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.transport label.check {
+  justify-content: flex-start;
+  white-space: normal;
+  align-items: flex-start;
+}
+
+/* --- tool palette --- */
+
+.tool-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tool-row.options {
+  gap: 8px;
+  min-height: 26px;
+}
+
+.tool-btn {
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tool-btn.active {
+  background: #2a1a1d;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tool-icon {
+  pointer-events: none;
+}
+
+/* Cursor hints per tool. */
+.pixel-canvas.tool-pencil,
+.pixel-canvas.tool-line,
+.pixel-canvas.tool-rect,
+.pixel-canvas.tool-ellipse {
+  cursor: crosshair;
+}
+
+.pixel-canvas.tool-eraser {
+  cursor: cell;
+}
+
+.pixel-canvas.tool-fill {
+  cursor: pointer;
+}
+
+.pixel-canvas.tool-select {
+  cursor: default;
+}
+
+/* --- preview strip --- */
+
+.preview-strip {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* --- transport bar --- */
+
+.transport {
+  flex: none;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+}
+
+.transport-main {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.tgroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tgroup.payload {
+  flex: 1;
+  min-width: 0;
+}
+
+.tgroup:last-child {
+  margin-left: auto;
+}
+
+.transport-btn {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+}
+
+.capacity-bar.wide {
+  flex: 1;
+  max-width: 220px;
+  min-width: 60px;
+}
+
+.device-select {
+  max-width: 190px;
+}
+
+/* Reads as a status light, not a button: there is nothing to configure on the
+   USB path, so it must not invite a click. */
+.transport-chip {
+  padding: 4px 9px;
+  border: 1px solid var(--ok, #3ba55d);
+  border-radius: 4px;
+  color: var(--ok, #3ba55d);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: default;
+}
+
+button.record {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+button.record:hover:not(:disabled) {
+  background: #2a1a1d;
+}
+
+button.record.armed {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.record-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+button.record.armed .record-dot {
+  animation: rec-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.transport-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.send-progress {
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.send-progress-fill {
+  height: 100%;
+  background: #35c37d;
+  transition: width 120ms linear;
+}
+
+.transport-settings {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.transport .pairing-steps {
+  margin: 0;
+  max-width: 620px;
+}
+
+.mu {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* One scrub bar covers every mode, so it has to stay usable at 8 steps and at
+   100. Thin track, small accent thumb. The vendor prefixes cannot be merged
+   into one rule: an unrecognised selector voids the whole block, so Chromium
+   and Gecko each need their own. */
+.scrub {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 150px;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scrub:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.scrub::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+}
+
+.scrub::-moz-range-track {
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+}
+
+.scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.scrub::-moz-range-thumb {
+  width: 10px;
+  height: 14px;
+  border: none;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.scrub:disabled::-webkit-slider-thumb {
+  background: var(--muted);
+}
+
+.scrub:disabled::-moz-range-thumb {
+  background: var(--muted);
+}
+
+.scrub:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.send-progress-fill.indeterminate {
+  width: 35%;
+  animation: sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.gatt-dump {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* --- regrouped editor --- */
+
+/* A small uppercase label naming what a group of controls acts on. */
+.group-tag {
+  font-size: 9px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.message-props {
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.grow {
+  flex: 1;
+}
+
+/* Tools sit beside the canvas; everything that edits the frame is in this
+   column, so drawing and transforming are no longer split across it. */
+.workspace {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  flex: none;
+}
+
+.insert-panel {
+  padding: 7px 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--blue);
+  border-radius: 0 5px 5px 0;
+}
+
+.insert-panel input[type="text"],
+.insert-panel input:not([type]) {
+  flex: 1;
+}
+
+button.active {
+  background: #2a1a1d;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- timeline --- */
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The preview is the device; the canvas is the workspace. Sinking the preview
+   into a darker inset keeps two similar dot grids from reading as the same. */
+.preview-strip {
+  background: #07090d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 0;
+  margin-bottom: 2px;
+}
+
+.transport-detail {
+  position: relative;
+}
+
+.detail-close {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.led-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  flex: none;
+}
+
+/* --- modals --------------------------------------------------------------
+   Losing unsaved work is the one mistake this app can make that the user
+   cannot undo, so the dialog that prevents it gets to sit above everything. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 6, 10, 0.65);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  width: min(440px, calc(100vw - 48px));
+  padding: 20px 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+.modal-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-body {
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.modal-body p {
+  margin: 0 0 8px;
+}
+
+.modal-body strong {
+  color: var(--text);
+}
+
+/* Right-aligned, primary last: the resting position of the hand on every
+   platform this ships to. */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-actions button {
+  padding: 6px 14px;
+}
+
+.modal-actions button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal-actions button.danger {
+  border-color: #7a3b3b;
+  color: #ff8b7a;
+}

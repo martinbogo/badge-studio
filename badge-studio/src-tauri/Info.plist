@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- macOS refuses to hand out a CoreBluetooth session without this string,
+         and shows it verbatim in the permission prompt. -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Badge Studio uses Bluetooth to find your LED badge and send animations to it.</string>
+</dict>
+</plist>

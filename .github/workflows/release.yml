@@ -1,0 +1,156 @@
+name: Release
+
+# Pushing a version tag builds installers on every platform and publishes them
+# as a GitHub release. Running it by hand from the Actions tab builds the same
+# things and leaves them as workflow artifacts, so the matrix can be exercised
+# without cutting a release.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Every runner builds natively, so no --target is passed and the bundle path
+  # is the same everywhere.
+  BUNDLE: badge-studio/src-tauri/target/release/bundle
+
+jobs:
+  # A tag that disagrees with the manifests would produce installers whose
+  # filenames contradict the release they are attached to. Fail early instead.
+  check-version:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the version in the manifests
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./badge-studio/package.json').version")
+          CARGO=$(grep -m1 '^version' badge-studio/src-tauri/Cargo.toml | cut -d'"' -f2)
+          CONF=$(node -p "require('./badge-studio/src-tauri/tauri.conf.json').version")
+          echo "tag=$TAG package.json=$PKG Cargo.toml=$CARGO tauri.conf.json=$CONF"
+          for V in "$PKG" "$CARGO" "$CONF"; do
+            if [ "$V" != "$TAG" ]; then
+              echo "::error::Tag v$TAG does not match version $V. Bump the manifests or retag."
+              exit 1
+            fi
+          done
+
+  build:
+    needs: [check-version]
+    # `always()` lets a manual run proceed even though check-version is skipped
+    # off-tag; the guard still blocks a mismatched tag.
+    if: always() && needs.check-version.result != 'failure'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macos-arm64
+          - os: macos-13
+            label: macos-x86_64
+          - os: ubuntu-22.04
+            label: linux-x86_64
+          - os: windows-latest
+            label: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: badge-studio/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: badge-studio/src-tauri
+
+      # webkit2gtk 4.1 is the Tauri v2 webview. libudev is needed by hidapi's
+      # hidraw backend, which is how the badge is reached over USB.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev libudev-dev
+
+      - name: Install dependencies
+        working-directory: badge-studio
+        run: npm ci
+
+      - name: Test
+        working-directory: badge-studio
+        run: npm test
+
+      - name: Test (Rust)
+        working-directory: badge-studio/src-tauri
+        run: cargo test --release
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: badge-studio
+
+      # Tauri has no tarball target, so build one from the bare binary. It has
+      # no bundled webview and relies on the system webkit2gtk, which is why
+      # the packages above remain the recommended route.
+      - name: Build Linux tarball
+        if: runner.os == 'Linux'
+        run: |
+          VERSION=$(node -p "require('./badge-studio/package.json').version")
+          STAGE="badge-studio-${VERSION}-linux-x86_64"
+          mkdir -p "$STAGE"
+          cp badge-studio/src-tauri/target/release/badge-studio "$STAGE/"
+          cp README.md LICENSE PROTOCOL.md 99-led-badge.rules "$STAGE/"
+          tar -czf "${STAGE}.tar.gz" "$STAGE"
+          sha256sum "${STAGE}.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          if-no-files-found: error
+          path: |
+            ${{ env.BUNDLE }}/dmg/*.dmg
+            ${{ env.BUNDLE }}/msi/*.msi
+            ${{ env.BUNDLE }}/nsis/*.exe
+            ${{ env.BUNDLE }}/deb/*.deb
+            ${{ env.BUNDLE }}/rpm/*.rpm
+            ${{ env.BUNDLE }}/appimage/*.AppImage
+            *.tar.gz
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List what will be published
+        run: ls -lh dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Badge Studio ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --draft \
+            dist/*
+          echo "Draft release created. Review it, then publish from the Releases page."

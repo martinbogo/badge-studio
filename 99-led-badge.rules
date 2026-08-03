@@ -1,0 +1,13 @@
+# nyx LED badge (WCH CH582), stock firmware, vendor-defined HID interface.
+#
+# Without this, /dev/hidraw* for the badge is root-only and Badge Studio can see
+# the device but not open it. macOS and Windows need no equivalent: their HID
+# stacks grant userspace access to non-boot devices by default.
+#
+#   sudo cp 99-led-badge.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Then unplug and replug the badge.
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0416", ATTRS{idProduct}=="5020", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0416", ATTRS{idProduct}=="5020", MODE="0660", TAG+="uaccess"

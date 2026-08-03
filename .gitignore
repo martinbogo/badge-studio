@@ -1,0 +1,26 @@
+# Scratch clones kept for reference, not part of this project.
+reference/
+
+# Node
+node_modules/
+dist/
+
+# Rust
+target/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Local Claude Code settings
+.claude/
+
+# Documents and exports saved into the project root while testing. Scoped with
+# a leading slash so these never reach into badge-studio/ and hide something
+# that belongs in the repo.
+/*.png
+/*.badge
+/*.badgemsg
