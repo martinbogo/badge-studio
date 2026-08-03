@@ -1,85 +1,101 @@
 # Badge Studio
 
-A desktop application for designing and uploading animations to the nyx v1 LED
-badge (WCH CH582, 44x11 monochrome matrix).
+Design animations for the nyx v1 LED badge (WCH CH582, 44x11 monochrome
+matrix) and upload them over USB or Bluetooth.
 
-Runs on macOS, Windows and Linux. Uploads over USB or Bluetooth LE using the
-badge's stock firmware. No reflashing is required.
+Runs on macOS, Windows and Linux, and works with the badge's stock firmware.
+No reflashing is required.
 
-![The editor, with scrolling text](docs/editor.png)
+![Badge Studio editor](docs/editor.png)
 
-Draw on the grid, or stamp text using the badge's own font. The preview at the
-top shows what the badge will display, animated at its real speed.
+![Animation timeline](docs/animation.png)
 
-![Frame-by-frame animation](docs/animation.png)
+## Download
 
-Animation mode gives each of the 8 message slots its own 8-frame timeline, with
-onion skinning showing the previous frame behind the current one. The dashed
-outline marks the 44px the badge actually shows, since animation frames are
-48px wide.
+Prebuilt packages are on the [Releases](../../releases) page.
 
-## Features
-
-**Editing**
-
-- Pixel editor with pencil, eraser, line, rectangle, ellipse (outline or
-  filled), flood fill and rectangular select
-- Brush sizes 1 to 3 px for pencil, eraser and line
-- Right-click erases with any tool
-- Selections can be dragged, nudged with the arrow keys, and cut, copied or
-  pasted
-- Text insertion using the badge's built-in 167-glyph font
-- Image import with an adjustable black/white threshold
-- Undo and redo
-
-**Animation**
-
-- 8 message slots, each holding up to 8 animation frames, for 64 frames total
-- Frame timeline with onion skinning, duplication, deletion and drag reordering
-- Live preview that simulates the badge at its real display speed
-- Scrub bar and single-frame jog through any animation or effect
-- Preview colour selectable to match your badge's LEDs
-
-**Message settings**
-
-- 9 display modes: scroll left, scroll right, scroll up, scroll down, fixed,
-  animation, snowflake, picture, laser
-- 8 speeds, blink, animated border
-- 4 brightness levels: 25%, 50%, 75%, 100%
-- Capacity meter showing payload size against what the badge accepts
-
-**Uploading**
-
-- USB by default, Bluetooth LE when no cable is connected
-- Automatic detection when the badge is plugged in or unplugged
-- Per-chunk transfer progress
-
-## Installing
-
-Prebuilt packages for each release are on the
-[Releases](../../releases) page.
-
-| Platform | Download |
+| Platform | File |
 |---|---|
 | macOS (Apple Silicon) | `Badge.Studio_<version>_aarch64.dmg` |
 | Windows | `Badge.Studio_<version>_x64-setup.exe` or `.msi` |
-| Linux (Debian/Ubuntu) | `.deb` |
-| Linux (Fedora/RHEL) | `.rpm` |
-| Linux (portable) | `.AppImage` |
-| Linux (binary only) | `.tar.gz` |
+| Debian, Ubuntu | `.deb` |
+| Fedora, RHEL | `.rpm` |
+| Any Linux, portable | `.AppImage` |
+| Linux, binary only | `.tar.gz` |
 
-macOS builds are Apple Silicon only. Intel Macs need a build from source.
+macOS builds are signed and notarized, and are Apple Silicon only. Intel Macs
+need a build from source.
 
-**macOS** releases are signed and notarized, so the app opens with a
-double-click and needs no Gatekeeper workaround.
+Windows builds are not signed, so SmartScreen warns on first run: choose "More
+info", then "Run anyway".
 
-**Windows** releases are not code-signed. SmartScreen warns on first run:
-choose "More info", then "Run anyway".
+Linux builds target glibc 2.35 (Ubuntu 22.04) and will not run on older
+distributions. The `.deb` and `.rpm` declare their dependencies and are the
+better choice; the `.tar.gz` is the bare executable and expects
+`webkit2gtk-4.1` to be installed already.
 
-Linux packages are built against glibc 2.35 (Ubuntu 22.04) and will not run on
-older distributions. Build from source in that case. The `.tar.gz` contains the
-bare executable and expects `webkit2gtk-4.1` to be installed already; the `.deb`
-and `.rpm` declare their dependencies and are the better choice.
+## What the badge can hold
+
+Eight message slots. Each is either a single bitmap or an animation of up to
+eight frames, so a full sequence is 64 frames. The badge cycles the slots.
+
+Each slot has its own display mode, speed and options:
+
+| | |
+|---|---|
+| Modes | Scroll left, scroll right, scroll up, scroll down, fixed, animation, snowflake, picture, laser |
+| Speed | 1 to 8 |
+| Options | Blink, animated border |
+| Brightness | 25%, 50%, 75%, 100%, set per upload |
+
+Bitmaps can be wider than the 44px display. Scrolling modes use the extra
+width; animation frames are a fixed 48px each.
+
+## Drawing
+
+Pencil, eraser, line, rectangle, ellipse, flood fill and a rectangular
+selection you can drag, nudge, cut, copy and paste. Right-click erases with any
+tool.
+
+Text is stamped using the badge's own 167-glyph font, so what you draw with is
+what the hardware would have rendered. Images can be imported with an
+adjustable black and white threshold.
+
+The preview runs at the badge's real speed, so timing looks the same on screen
+as it does on the hardware. A scrub bar steps through any animation or effect a
+frame at a time.
+
+## Connecting the badge
+
+### USB
+
+Connect the cable. The badge is detected automatically, a green **USB**
+indicator appears, and **Record** uploads to it in well under a second.
+
+On Linux the device is root-only until a udev rule grants access:
+
+```bash
+sudo cp 99-led-badge.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Unplug and reconnect the badge afterwards. macOS and Windows need no setup.
+
+### Bluetooth
+
+Used automatically when no cable is connected. The badge does not advertise
+until you ask it to:
+
+1. Unplug it from USB. It stays silent over Bluetooth while connected.
+2. Press the first button. A Bluetooth icon appears when it is ready.
+
+It drops out of Bluetooth mode after every upload, so step 2 has to be repeated
+each time.
+
+Bluetooth uploads are slow and can fail part-way on large animations. Prefer
+USB for anything approaching 64 frames.
+
+On macOS the first scan raises a system permission prompt.
 
 ## Documents
 
@@ -91,49 +107,9 @@ and `.rpm` declare their dependencies and are the better choice.
 Both are JSON, and both are registered as file associations, so double-click
 and "Open With" work.
 
-New, Open, Save, Save As, Open Recent, Import Message and Export Message are in
-the **File** menu. New, Open and Save are also in the application's top bar.
-
-The window title shows the document name, with a bullet when there are unsaved
-changes. Anything that would discard unsaved work asks first, offering Save,
-Discard or Cancel.
-
-The working copy is written to the application data directory a few seconds
-after the last edit, and deleted on a clean exit. If the application is found
-to have exited uncleanly, it offers to restore that copy on next launch.
-
-## Connecting the badge
-
-### USB
-
-Connect the badge with a USB cable. It is detected automatically and a green
-**USB** indicator appears in the transport bar. Press **Record** to upload.
-
-On Linux the device is accessible only to root unless a udev rule grants
-access:
-
-```bash
-sudo cp 99-led-badge.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Unplug and reconnect the badge afterwards. macOS and Windows need no
-configuration.
-
-### Bluetooth LE
-
-Used when no cable is connected. The badge does not advertise by default:
-
-1. Unplug it from USB. It will not advertise over Bluetooth while connected.
-2. Press the first button. A Bluetooth icon appears when it is ready.
-
-The badge leaves Bluetooth mode after every upload, so step 2 must be repeated
-before each send.
-
-Bluetooth uploads of large animations are slow and can fail part-way. Use USB
-for anything approaching the full 64 frames.
-
-On macOS, the first scan raises a system permission prompt.
+Work in progress is autosaved a few seconds after each edit and discarded on a
+clean exit. If the application is found to have exited uncleanly, it offers to
+restore that copy on the next launch.
 
 ## Keyboard
 
@@ -152,14 +128,7 @@ On macOS, the first scan raises a system permission prompt.
 
 ## Building
 
-### Requirements
-
-All platforms need:
-
-- [Rust](https://rustup.rs) (stable)
-- [Node.js](https://nodejs.org) 20.19 or newer
-
-Plus, per platform:
+Rust (stable) and Node.js 20.19 or newer, plus:
 
 **macOS**
 
@@ -169,58 +138,46 @@ xcode-select --install
 
 **Windows**
 
-- Microsoft C++ Build Tools
-- WebView2 runtime (preinstalled on Windows 11 and current Windows 10)
+Microsoft C++ Build Tools, and the WebView2 runtime if you are on an older
+Windows 10.
 
-**Linux** (Debian/Ubuntu; adjust package names for other distributions)
+**Linux** (Debian and Ubuntu; adjust names for other distributions)
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev
 ```
 
-### Running
+Then:
 
 ```bash
 cd badge-studio
 npm install
-npm run tauri dev
+npm run tauri dev            # run it
+npm run tauri build          # build installers
+npm test                     # editor and preview tests
+cd src-tauri && cargo test   # encoder and font tests
 ```
 
-### Producing a release build
+Installers land in `badge-studio/src-tauri/target/release/bundle/`. Builds are
+native only; cross-compiling between platforms is not supported.
 
-```bash
-cd badge-studio
-npm run tauri build
-```
-
-Installers and application bundles are written to
-`badge-studio/src-tauri/target/release/bundle/`:
-
-| Platform | Output |
-|---|---|
-| macOS | `macos/Badge Studio.app`, `dmg/*.dmg` |
-| Windows | `msi/*.msi`, `nsis/*.exe` |
-| Linux | `deb/*.deb`, `rpm/*.rpm`, `appimage/*.AppImage` |
-
-Builds are native only; cross-compiling between platforms is not supported.
-
-### Tests
-
-```bash
-cd badge-studio && npm test              # editor and preview
-cd badge-studio/src-tauri && cargo test  # encoder and font
-```
-
-### Releases
+### Cutting a release
 
 Pushing a `v*` tag builds every platform and attaches the installers to a draft
-GitHub release, which is then published by hand. The tag must match the version
-in `package.json`, `Cargo.toml` and `tauri.conf.json`, or the workflow stops
-before building.
+GitHub release. The tag has to match the version in `package.json`,
+`Cargo.toml` and `tauri.conf.json`, or the workflow stops before building.
 
-macOS builds are signed and notarized when these repository secrets are
-present, and built unsigned when they are not:
+```bash
+git tag -a v1.2.3 -m "Badge Studio 1.2.3"
+git push origin v1.2.3
+```
+
+The same workflow runs from the Actions tab without a tag, which builds
+everything and leaves the results as workflow artifacts.
+
+macOS builds are signed and notarized when these repository secrets are set,
+and built unsigned when they are not:
 
 | Secret | Value |
 |---|---|
@@ -231,22 +188,14 @@ present, and built unsigned when they are not:
 | `APPLE_PASSWORD` | An app-specific password, not the account password |
 | `APPLE_TEAM_ID` | The 10-character team identifier |
 
-`scripts/setup-macos-signing.sh` stores all six. It reads the signing identity
-and team ID out of your keychain, prompts for the rest, and pipes the values
-straight to `gh secret set` so they are never written to disk or echoed.
+`scripts/setup-macos-signing.sh` stores all six, reading the identity and team
+ID from your keychain and piping the values straight to `gh secret set` so they
+are never written to disk:
 
 ```bash
 ./scripts/setup-macos-signing.sh --check          # what is already set
 ./scripts/setup-macos-signing.sh certificate.p12  # set everything
 ```
-
-```bash
-git tag -a v1.0.0 -m "Badge Studio 1.0.0"
-git push origin v1.0.0
-```
-
-The same workflow can be run from the Actions tab without a tag, which builds
-everything and leaves the results as workflow artifacts.
 
 ## Protocol
 
@@ -254,4 +203,4 @@ everything and leaves the results as workflow artifacts.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
