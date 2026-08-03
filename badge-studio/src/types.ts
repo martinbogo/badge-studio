@@ -99,7 +99,6 @@ export interface BadgeInfo {
   name: string | null;
   rssi: number | null;
   services: string[];
-  is_badge: boolean;
 }
 
 export interface EncodeSummary {

@@ -85,10 +85,8 @@ pub struct BadgeInfo {
     pub id: String,
     pub name: Option<String>,
     pub rssi: Option<i16>,
-    /// Advertised service UUIDs, for troubleshooting unrecognised devices.
+    /// Advertised service UUIDs.
     pub services: Vec<String>,
-    /// Whether this device advertises the badge service.
-    pub is_badge: bool,
 }
 
 async fn adapter() -> Result<Adapter, BleError> {
@@ -101,13 +99,11 @@ async fn adapter() -> Result<Adapter, BleError> {
         .ok_or(BleError::NoAdapter)
 }
 
-/// Scan for peripherals. With `badges_only`, returns just those advertising the
-/// badge service; otherwise returns everything seen, which is how you tell
-/// "badge is not advertising" apart from "Bluetooth is not working".
-pub async fn scan(timeout_ms: u64, badges_only: bool) -> Result<Vec<BadgeInfo>, BleError> {
+/// Scan for badges: peripherals advertising the badge service.
+pub async fn scan(timeout_ms: u64) -> Result<Vec<BadgeInfo>, BleError> {
     let central = adapter().await?;
-    // An empty filter is required to see non-badge devices; CoreBluetooth also
-    // returns more reliable results unfiltered, so filter on our side instead.
+    // CoreBluetooth returns more reliable results when it is not given a
+    // service filter, so scan unfiltered and match on our side.
     central.start_scan(ScanFilter::default()).await?;
     tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
     let _ = central.stop_scan().await;
@@ -117,8 +113,7 @@ pub async fn scan(timeout_ms: u64, badges_only: bool) -> Result<Vec<BadgeInfo>, 
         let Some(props) = p.properties().await? else {
             continue;
         };
-        let is_badge = props.services.contains(&SERVICE_UUID);
-        if badges_only && !is_badge {
+        if !props.services.contains(&SERVICE_UUID) {
             continue;
         }
         out.push(BadgeInfo {
@@ -126,14 +121,11 @@ pub async fn scan(timeout_ms: u64, badges_only: bool) -> Result<Vec<BadgeInfo>, 
             name: props.local_name,
             rssi: props.rssi,
             services: props.services.iter().map(|u| u.to_string()).collect(),
-            is_badge,
         });
     }
-    out.sort_by(|a, b| {
-        b.is_badge
-            .cmp(&a.is_badge)
-            .then(b.rssi.unwrap_or(i16::MIN).cmp(&a.rssi.unwrap_or(i16::MIN)))
-    });
+    // Strongest signal first: with more than one badge in range, the nearest is
+    // almost always the one being programmed.
+    out.sort_by(|a, b| b.rssi.unwrap_or(i16::MIN).cmp(&a.rssi.unwrap_or(i16::MIN)));
     Ok(out)
 }
 

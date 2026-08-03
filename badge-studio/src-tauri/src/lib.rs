@@ -210,9 +210,8 @@ async fn ble_status() -> Result<String, String> {
 #[tauri::command]
 async fn ble_scan(
     timeout_ms: Option<u64>,
-    badges_only: Option<bool>,
 ) -> Result<Vec<ble::BadgeInfo>, String> {
-    ble::scan(timeout_ms.unwrap_or(6000), badges_only.unwrap_or(true))
+    ble::scan(timeout_ms.unwrap_or(6000))
         .await
         .map_err(|e| e.to_string())
 }

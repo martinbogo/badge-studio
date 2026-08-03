@@ -101,7 +101,6 @@ export default function TransportBar({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPairing, setShowPairing] = useState(false);
-  const [showAll, setShowAll] = useState(false);
   const startedAt = useRef<number | null>(null);
   const [rate, setRate] = useState<number | null>(null);
   const [usb, setUsb] = useState<UsbInfo | null>(null);
@@ -146,25 +145,20 @@ export default function TransportBar({
   const unproven = used > KNOWN_GOOD_COLUMNS;
   const pct = Math.min(100, Math.round((used / KNOWN_GOOD_COLUMNS) * 100));
 
-  const scan = useCallback(
-    async (all: boolean): Promise<BadgeInfo[]> => {
-      const found = await invoke<BadgeInfo[]>("ble_scan", {
-        timeoutMs: 6000,
-        badgesOnly: !all,
-      });
-      setBadges(found);
-      const real = found.filter((b) => b.is_badge);
-      if (real.length) setSelected((s) => (real.some((b) => b.id === s) ? s : real[0].id));
-      return real;
-    },
-    []
-  );
+  const scan = useCallback(async (): Promise<BadgeInfo[]> => {
+    const found = await invoke<BadgeInfo[]>("ble_scan", { timeoutMs: 6000 });
+    setBadges(found);
+    if (found.length) {
+      setSelected((s) => (found.some((b) => b.id === s) ? s : found[0].id));
+    }
+    return found;
+  }, []);
 
   const onScan = useCallback(async () => {
     setBusy("scan");
     setError(null);
     try {
-      const real = await scan(showAll);
+      const real = await scan();
       if (!real.length) {
         setError("No badge found.");
         setShowPairing(true);
@@ -177,7 +171,7 @@ export default function TransportBar({
     } finally {
       setBusy(null);
     }
-  }, [scan, showAll]);
+  }, [scan]);
 
   /**
    * Record always presses. USB wins whenever the cable is in: it needs no
@@ -216,7 +210,7 @@ export default function TransportBar({
       if (!target) {
         setBusy("scan");
         try {
-          const real = await scan(false);
+          const real = await scan();
           target = real[0]?.id ?? null;
         } catch (e) {
           setError(String(e));
@@ -372,7 +366,7 @@ export default function TransportBar({
               {busy === "scan" ? "Scanning..." : "Scan"}
             </button>
           )}
-          {!usb && badges.some((b) => b.is_badge) && (
+          {!usb && badges.length > 0 && (
             <select
               value={selected ?? ""}
               onChange={(e) => setSelected(e.target.value)}
@@ -380,8 +374,7 @@ export default function TransportBar({
               className="device-select"
             >
               {badges.map((b) => (
-                <option key={b.id} value={b.id} disabled={!b.is_badge}>
-                  {b.is_badge ? "" : "(not a badge) "}
+                <option key={b.id} value={b.id}>
                   {b.name || "(unnamed)"}
                   {b.rssi !== null ? `  ${b.rssi} dBm` : ""}
                 </option>
@@ -446,20 +439,7 @@ export default function TransportBar({
           {error && <p className="error">{error}</p>}
           {!error && status && <p className="mu small">{status}</p>}
 
-          {showPairing && (
-            <>
-              <PairingSteps />
-              <label className="check small">
-                <input
-                  type="checkbox"
-                  checked={showAll}
-                  onChange={(e) => setShowAll(e.target.checked)}
-                  disabled={busy !== null}
-                />
-                List every Bluetooth device, not just badges
-              </label>
-            </>
-          )}
+          {showPairing && <PairingSteps />}
 
         </div>
       )}
