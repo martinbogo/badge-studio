@@ -96,7 +96,13 @@ export default function PixelCanvas({
   const drag = useRef<DragState | null>(null);
   const lastCell = useRef<string>("");
   // Bumped on every pointer move so the preview redraws mid-drag.
-  const [, setTick] = useState(0);
+  //
+  // The drag lives in a ref, so mutating it changes no dependency and the
+  // redraw effect would never re-run on its own. `tick` is what actually gets
+  // it into that effect's dependency list. Discarding the value here silently
+  // costs every live preview: shapes, the selection marquee, and the lifted
+  // block while a selection is being moved.
+  const [tick, setTick] = useState(0);
 
   const width = frame[0]?.length ?? BADGE_WIDTH;
 
@@ -251,6 +257,7 @@ export default function PixelCanvas({
     selection,
     shapePoints,
     led,
+    tick,
   ]);
 
   const cellAt = useCallback(
