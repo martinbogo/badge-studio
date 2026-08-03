@@ -71,16 +71,6 @@ export const MODE_LABELS: Record<Mode, string> = {
   laser: "Laser",
 };
 
-/**
- * Modes whose preview has been checked against the physical badge. Every mode's
- * preview is ported from the reference app's own simulation, but only these two
- * have been watched running on real hardware.
- */
-export const HARDWARE_VERIFIED: ReadonlySet<Mode> = new Set<Mode>([
-  "scroll_left",
-  "animation",
-]);
-
 /** 11 rows of booleans, each row `width` long. */
 export type Frame = boolean[][];
 

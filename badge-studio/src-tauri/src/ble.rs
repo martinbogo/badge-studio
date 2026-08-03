@@ -31,11 +31,11 @@ pub const CHAR_UUID: Uuid = Uuid::from_u128(0x0000fee1_0000_1000_8000_00805f9b34
 /// Larger chunks cut the number of round trips proportionally, which matters
 /// because the badge drops out of Bluetooth mode after a timeout and truncates
 /// anything still in flight.
-pub const DEFAULT_CHUNK_SIZE: usize = 16;
-pub const DEFAULT_CHUNK_DELAY_MS: u64 = 120;
+/// Not a tunable. The firmware never acknowledges a larger write, so an
+/// oversized one hangs forever rather than failing.
+pub const CHUNK_SIZE: usize = 16;
 
 const WRITE_TIMEOUT: Duration = Duration::from_secs(8);
-/// Matches the reference app, which retries each chunk three times.
 const WRITE_ATTEMPTS: usize = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -77,17 +77,7 @@ pub enum BleError {
     ConnectTimeout,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CharInfo {
-    pub uuid: String,
-    pub properties: Vec<String>,
-}
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ServiceInfo {
-    pub uuid: String,
-    pub characteristics: Vec<CharInfo>,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BadgeInfo {
@@ -166,25 +156,6 @@ async fn find(central: &Adapter, id: Option<&str>) -> Result<Peripheral, BleErro
     }
 }
 
-/// Write the packed stream to the badge, reporting progress as `(chunk, total)`.
-pub struct Transport {
-    pub chunk_size: usize,
-    pub delay_ms: u64,
-    /// Write-without-response lets several writes share one connection event,
-    /// which is much faster but gives up the firmware's flow control.
-    pub without_response: bool,
-}
-
-impl Default for Transport {
-    fn default() -> Self {
-        Transport {
-            chunk_size: DEFAULT_CHUNK_SIZE,
-            delay_ms: DEFAULT_CHUNK_DELAY_MS,
-            without_response: false,
-        }
-    }
-}
-
 /// Write `data` to the badge, in full, from the start.
 ///
 /// There was once a `skip` parameter here to resume an upload that ran out of
@@ -195,7 +166,6 @@ impl Default for Transport {
 pub async fn send<F>(
     data: &[u8],
     id: Option<&str>,
-    transport: Transport,
     mut on_progress: F,
 ) -> Result<(), BleError>
 where
@@ -220,7 +190,7 @@ where
             .await
             .map_err(|_| BleError::ConnectTimeout)??;
     }
-    let result = write_all(&peripheral, data, &transport, &mut on_progress).await;
+    let result = write_all(&peripheral, data, &mut on_progress).await;
 
     // Stock firmware only latches the upload once the link drops.
     let _ = peripheral.disconnect().await;
@@ -230,7 +200,6 @@ where
 async fn write_all<F>(
     peripheral: &Peripheral,
     data: &[u8],
-    transport: &Transport,
     on_progress: &mut F,
 ) -> Result<(), BleError>
 where
@@ -243,24 +212,22 @@ where
         .find(|c| c.uuid == CHAR_UUID)
         .ok_or(BleError::NoCharacteristic)?;
 
-    let kind = if transport.without_response {
-        WriteType::WithoutResponse
-    } else {
-        WriteType::WithResponse
-    };
-
-    let size = transport.chunk_size.max(1);
-    let chunks: Vec<&[u8]> = data.chunks(size).collect();
+    let chunks: Vec<&[u8]> = data.chunks(CHUNK_SIZE).collect();
     let total = chunks.len();
     for (i, c) in chunks.iter().enumerate() {
-        // The reference app retries each chunk up to three times before giving
-        // up. A transient failure mid-transfer is otherwise unrecoverable: the
-        // badge cannot be resumed, so it is left half-written.
+        // Retry each chunk a few times. A transient failure mid-transfer is
+        // otherwise unrecoverable, since the badge cannot resume and is left
+        // half-written.
         let mut last: Option<BleError> = None;
         for attempt in 0..WRITE_ATTEMPTS {
             // An oversized write is not rejected, it is simply never
             // acknowledged, so an unbounded write hangs with no feedback.
-            match tokio::time::timeout(WRITE_TIMEOUT, peripheral.write(&ch, c, kind)).await {
+            match tokio::time::timeout(
+                WRITE_TIMEOUT,
+                peripheral.write(&ch, c, WriteType::WithResponse),
+            )
+            .await
+            {
                 Ok(Ok(())) => {
                     last = None;
                     break;
@@ -270,7 +237,7 @@ where
                     last = Some(BleError::WriteTimeout {
                         done: i + 1,
                         total,
-                        size: transport.chunk_size,
+                        size: CHUNK_SIZE,
                         secs: WRITE_TIMEOUT.as_secs(),
                     })
                 }
@@ -283,71 +250,8 @@ where
             return Err(e);
         }
         on_progress(i + 1, total);
-        if transport.delay_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(transport.delay_ms)).await;
-        }
     }
     Ok(())
-}
-
-/// Enumerate every service and characteristic the badge exposes.
-///
-/// The reference app only ever touches 0xFEE0/0xFEE1 and never reads or
-/// subscribes, so there is no application-level delivery confirmation in the
-/// protocol. This exists to check whether the *hardware* offers one that the
-/// app simply ignores.
-pub async fn inspect(id: Option<&str>) -> Result<Vec<ServiceInfo>, BleError> {
-    let central = adapter().await?;
-    if find(&central, id).await.is_err() {
-        central.start_scan(ScanFilter::default()).await?;
-        tokio::time::sleep(Duration::from_millis(4000)).await;
-        let _ = central.stop_scan().await;
-    }
-    let peripheral = find(&central, id).await?;
-    if !peripheral.is_connected().await? {
-        tokio::time::timeout(CONNECT_TIMEOUT, peripheral.connect())
-            .await
-            .map_err(|_| BleError::ConnectTimeout)??;
-    }
-    peripheral.discover_services().await?;
-
-    let mut out: Vec<ServiceInfo> = Vec::new();
-    for s in peripheral.services() {
-        let mut chars: Vec<CharInfo> = s
-            .characteristics
-            .iter()
-            .map(|c| {
-                let p = c.properties;
-                let mut props = Vec::new();
-                use btleplug::api::CharPropFlags as F;
-                for (flag, name) in [
-                    (F::READ, "read"),
-                    (F::WRITE, "write"),
-                    (F::WRITE_WITHOUT_RESPONSE, "write-without-response"),
-                    (F::NOTIFY, "notify"),
-                    (F::INDICATE, "indicate"),
-                    (F::BROADCAST, "broadcast"),
-                    (F::AUTHENTICATED_SIGNED_WRITES, "signed-write"),
-                ] {
-                    if p.contains(flag) {
-                        props.push(name.to_string());
-                    }
-                }
-                CharInfo {
-                    uuid: c.uuid.to_string(),
-                    properties: props,
-                }
-            })
-            .collect();
-        chars.sort_by(|a, b| a.uuid.cmp(&b.uuid));
-        out.push(ServiceInfo {
-            uuid: s.uuid.to_string(),
-            characteristics: chars,
-        });
-    }
-    out.sort_by(|a, b| a.uuid.cmp(&b.uuid));
-    let _ = peripheral.disconnect().await;
-    Ok(out)
 }
 
 /// Whether a Bluetooth adapter is present and usable. Surfaces the common

@@ -18,7 +18,6 @@ import { ledPalette } from "../led";
 import {
   BADGE_HEIGHT,
   BADGE_WIDTH,
-  HARDWARE_VERIFIED,
   type Brightness,
   type LedColor,
   type Message,
@@ -145,25 +144,11 @@ export default function BadgePreview({
     }
   }, [message, step, brightness, blinkOn, cell, led]);
 
-  const unverified = message && !HARDWARE_VERIFIED.has(message.mode);
-
   return (
     <div className="preview" ref={wrapRef}>
       <canvas ref={canvasRef} className="preview-canvas" />
       <div className="preview-meta">
-        {message ? (
-          <>
-            {unverified && (
-              <span
-                title="Ported from the reference app's own simulation of this effect, but not yet watched running on the physical badge."
-              >
-                not hardware-checked
-              </span>
-            )}
-          </>
-        ) : (
-          <span>no message selected</span>
-        )}
+        {!message && <span>no message selected</span>}
       </div>
     </div>
   );

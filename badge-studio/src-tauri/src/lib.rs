@@ -207,14 +207,6 @@ async fn ble_status() -> Result<String, String> {
     ble::adapter_status().await.map_err(|e| e.to_string())
 }
 
-/// Dump every service and characteristic the badge exposes.
-#[tauri::command]
-async fn ble_inspect(device_id: Option<String>) -> Result<Vec<ble::ServiceInfo>, String> {
-    ble::inspect(device_id.as_deref())
-        .await
-        .map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 async fn ble_scan(
     timeout_ms: Option<u64>,
@@ -266,23 +258,13 @@ async fn send_to_badge(
     messages: Vec<MessageSpec>,
     brightness: u8,
     device_id: Option<String>,
-    chunk_size: Option<usize>,
-    delay_ms: Option<u64>,
-    without_response: Option<bool>,
 ) -> Result<usize, SendError> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    let transport = ble::Transport {
-        chunk_size: chunk_size.unwrap_or(ble::DEFAULT_CHUNK_SIZE),
-        delay_ms: delay_ms.unwrap_or(ble::DEFAULT_CHUNK_DELAY_MS),
-        without_response: without_response.unwrap_or(false),
-    };
-    let size = transport.chunk_size.max(1);
-
     let data = encode(&messages, brightness).map_err(|message| SendError { message })?;
     let total_bytes = data.len();
-    let total_writes = total_bytes.div_ceil(size);
+    let total_writes = total_bytes.div_ceil(ble::CHUNK_SIZE);
 
     // A wedged CoreBluetooth write does not respond to `tokio::time::timeout`:
     // the future never completes and never wakes. So run the transfer on its
@@ -294,7 +276,7 @@ async fn send_to_badge(
     let emitter = app.clone();
 
     let task = tokio::spawn(async move {
-        ble::send(&data, device_id.as_deref(), transport, |chunk, total| {
+        ble::send(&data, device_id.as_deref(), |chunk, total| {
             seen.store(chunk, Ordering::Relaxed);
             let _ = emitter.emit("send-progress", Progress { chunk, total });
         })
@@ -302,7 +284,6 @@ async fn send_to_badge(
         .map_err(|e| e.to_string())
     });
 
-    let began = std::time::Instant::now();
     let mut last = 0usize;
     let mut idle = std::time::Duration::ZERO;
     let tick = std::time::Duration::from_millis(500);
@@ -330,22 +311,15 @@ async fn send_to_badge(
                 if idle < STALL_TIMEOUT {
                     continue;
                 }
-                // Surface how long the link actually survived. Whether this is
-                // a fixed Bluetooth-mode window or just a poor link is only
-                // answerable by comparing that number across attempts.
-                let alive =
-                    (began.elapsed().as_secs_f32() - STALL_TIMEOUT.as_secs_f32()).max(0.01);
                 return Err(SendError {
                     message: format!(
-                        "Stalled after {last} of {total_writes} writes ({}%), {alive:.0}s in, \
-                         averaging {:.1} writes/s, then nothing for {}s.\n\
-                         The badge stops acknowledging writes once it leaves Bluetooth mode, \
-                         and the connection hangs rather than failing. Nothing partial can be \
-                         salvaged: press the first button to re-arm the badge and send again \
-                         from the start. Plugging in the USB cable avoids this entirely.",
-                        last * 100 / total_writes.max(1),
-                        last as f32 / alive,
-                        STALL_TIMEOUT.as_secs()
+                        "The upload stopped after {last} of {total_writes} writes.\n\n\
+                         The badge leaves Bluetooth mode on its own after a few \
+                         minutes, and stops responding without closing the \
+                         connection. Press its first button to put it back into \
+                         Bluetooth mode, then send again from the start.\n\n\
+                         Connecting the badge over USB avoids this entirely and is \
+                         much faster.",
                     ),
                 });
             }
@@ -374,7 +348,6 @@ pub fn run() {
             pick_image,
             ble_status,
             ble_scan,
-            ble_inspect,
             usb_find,
             send_to_badge,
             send_to_badge_usb,

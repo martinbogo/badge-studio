@@ -783,19 +783,6 @@ button.record.armed .record-dot {
   }
 }
 
-.gatt-dump {
-  margin: 0;
-  padding: 8px 10px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text);
-  overflow-x: auto;
-  white-space: pre;
-}
 
 /* --- regrouped editor --- */
 

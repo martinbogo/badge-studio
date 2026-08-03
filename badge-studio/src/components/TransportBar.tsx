@@ -101,14 +101,9 @@ export default function TransportBar({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPairing, setShowPairing] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [chunkSize, setChunkSize] = useState(16);
-  const [delayMs, setDelayMs] = useState(0);
-  const [withoutResponse, setWithoutResponse] = useState(false);
   const startedAt = useRef<number | null>(null);
   const [rate, setRate] = useState<number | null>(null);
-  const [gatt, setGatt] = useState<string | null>(null);
   const [usb, setUsb] = useState<UsbInfo | null>(null);
 
   useEffect(() => {
@@ -244,9 +239,6 @@ export default function TransportBar({
           messages: messages.map(toSpec),
           brightness,
           deviceId: target,
-          chunkSize,
-          delayMs,
-          withoutResponse,
         });
         setStatus(
           `Sent ${sent} bytes. The badge leaves Bluetooth mode after an upload, ` +
@@ -265,48 +257,15 @@ export default function TransportBar({
         startedAt.current = null;
       }
     },
-    [usb, selected, scan, messages, brightness, chunkSize, delayMs, withoutResponse]
+    [usb, selected, scan, messages, brightness]
   );
 
-  /** Dump the badge's GATT table, to see if it offers any delivery feedback. */
-  const inspect = useCallback(async () => {
-    setBusy("scan");
-    setError(null);
-    setStatus(null);
-    setShowPairing(false);
-    setGatt(null);
-    try {
-      const svcs = await invoke<
-        { uuid: string; characteristics: { uuid: string; properties: string[] }[] }[]
-      >("ble_inspect", { deviceId: selected });
-      setGatt(
-        svcs
-          .map(
-            (s) =>
-              `${s.uuid}\n` +
-              s.characteristics
-                .map((c) => `    ${c.uuid}  [${c.properties.join(", ")}]`)
-                .join("\n")
-          )
-          .join("\n")
-      );
-    } catch (e) {
-      setError(String(e));
-      setShowPairing(true);
-    } finally {
-      setBusy(null);
-    }
-  }, [selected]);
-
-  const detail =
-    busy || progress || error || status || showPairing || showSettings || gatt;
+  const detail = busy || progress || error || status || showPairing;
 
   const dismiss = () => {
     setError(null);
     setStatus(null);
     setShowPairing(false);
-    setShowSettings(false);
-    setGatt(null);
   };
 
   return (
@@ -378,9 +337,9 @@ export default function TransportBar({
           {unproven && (
             <span
               className="warn small"
-              title={`Above ${KNOWN_GOOD_COLUMNS} byte columns, the largest payload confirmed to transfer. Larger uploads have stalled part-way.`}
+              title="Uploads this size are unreliable over Bluetooth. Connect the badge over USB."
             >
-              beyond tested size
+              large for Bluetooth
             </span>
           )}
         </div>
@@ -400,14 +359,6 @@ export default function TransportBar({
               ))}
             </select>
           </label>
-          <button
-            className="transport-btn wide"
-            onClick={() => setShowSettings((v) => !v)}
-            title="Transport settings"
-            aria-label="Transport settings"
-          >
-            ⚙
-          </button>
           {usb ? (
             // Nothing to configure on this path, so say what it found and stop.
             <span
@@ -495,67 +446,21 @@ export default function TransportBar({
           {error && <p className="error">{error}</p>}
           {!error && status && <p className="mu small">{status}</p>}
 
-          {gatt && <pre className="gatt-dump">{gatt}</pre>}
-
-          {showPairing && <PairingSteps />}
-
-          {showSettings && (
-            <div className="transport-settings">
-              <label>
-                Chunk
-                <select
-                  value={chunkSize}
-                  onChange={(e) => setChunkSize(Number(e.target.value))}
-                  disabled={sending}
-                >
-                  {[16, 20, 32, 64, 128].map((n) => (
-                    <option key={n} value={n}>
-                      {n} B{n === 16 ? " (only known-good)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Delay
-                <select
-                  value={delayMs}
-                  onChange={(e) => setDelayMs(Number(e.target.value))}
-                  disabled={sending}
-                >
-                  {[0, 10, 30, 60, 120].map((n) => (
-                    <option key={n} value={n}>
-                      {n} ms
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={withoutResponse}
-                  onChange={(e) => setWithoutResponse(e.target.checked)}
-                  disabled={sending}
-                />
-                Write without response
-              </label>
-              <label className="check">
+          {showPairing && (
+            <>
+              <PairingSteps />
+              <label className="check small">
                 <input
                   type="checkbox"
                   checked={showAll}
                   onChange={(e) => setShowAll(e.target.checked)}
                   disabled={busy !== null}
                 />
-                Show all devices
+                List every Bluetooth device, not just badges
               </label>
-              <span className="mu small">
-                {Math.ceil(bytes / chunkSize)} writes. Anything above 16 bytes is
-                never acknowledged by this firmware and will hang.
-              </span>
-              <button onClick={inspect} disabled={busy !== null}>
-                Inspect GATT
-              </button>
-            </div>
+            </>
           )}
+
         </div>
       )}
     </div>
