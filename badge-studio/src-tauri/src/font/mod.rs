@@ -23,6 +23,10 @@
 //! Faces are generated from the pixel art in `fonts/*.face` by
 //! `fonts/build.py`. Edit the art, not the tables.
 
+mod cartoon;
+mod emoji;
+mod future;
+mod sans;
 mod serif;
 
 /// Rows per glyph, which is the badge's height.
@@ -68,7 +72,13 @@ impl Face {
 /// Every face, in fallback order. A glyph missing from the chosen face is
 /// looked up here in turn, so an emoji typed while Serif is selected still
 /// draws instead of turning into '?'.
-pub static FACES: &[&Face] = &[&serif::SERIF];
+pub static FACES: &[&Face] = &[
+    &serif::SERIF,
+    &sans::SANS,
+    &cartoon::CARTOON,
+    &future::FUTURE,
+    &emoji::EMOJI,
+];
 
 pub const DEFAULT_FACE: &str = "serif";
 
@@ -256,12 +266,20 @@ mod tests {
     #[test]
     fn variation_selectors_take_no_room() {
         let f = serif();
-        // Emoji arrive from a phone as the pictograph plus U+FE0F.
-        assert_eq!(measure(f, "A\u{FE0F}"), measure(f, "A"));
-        let l = layout(f, "A\u{FE0F}");
+        // A heart pasted from a phone arrives as the pictograph plus U+FE0F.
+        assert_eq!(measure(f, "\u{2764}\u{FE0F}"), measure(f, "\u{2764}"));
+        let l = layout(f, "\u{2764}\u{FE0F}");
         assert!(l.missing.is_empty(), "the selector must not read as unknown");
     }
 
+    #[test]
+    fn an_emoji_draws_in_any_face() {
+        for f in FACES.iter().filter(|f| f.pickable) {
+            let l = layout(f, "\u{2764}");
+            assert!(l.missing.is_empty(), "{} could not borrow the heart", f.id);
+            assert!(l.rows.iter().any(|r| r.iter().any(|p| *p)), "{} drew nothing", f.id);
+        }
+    }
 
     /// Every face you can select has to cover the same characters.
     ///
@@ -287,6 +305,16 @@ mod tests {
         }
     }
 
+    /// The scripts the faces are claimed to cover, spot-checked so a coverage
+    /// regression names the script rather than a list of code points.
+    #[test]
+    fn every_pickable_face_covers_latin_cyrillic_and_accents() {
+        for f in FACES.iter().filter(|f| f.pickable) {
+            for c in "AZaz09 Привет Мир Café Žluť".chars() {
+                assert!(f.glyph(c).is_some(), "{} cannot draw {c:?}", f.id);
+            }
+        }
+    }
 
     #[test]
     fn measure_matches_layout() {

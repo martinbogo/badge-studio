@@ -57,9 +57,27 @@ Pencil, eraser, line, rectangle, ellipse, flood fill and a rectangular
 selection you can drag, nudge, cut, copy and paste. Right-click erases with any
 tool.
 
-Text is stamped using the badge's own 167-glyph font, so what you draw with is
-what the hardware would have rendered. Images can be imported with an
-adjustable black and white threshold.
+Text is stamped from bitmap faces drawn for an 11px display:
+
+| Face | |
+|---|---|
+| Serif | The badge's own blocky face |
+| Sans | Light and narrow, so more text fits across the badge |
+| Cartoon | Rounded and hand-lettered, with a bounce between letters |
+| Futuristic | Heavy and barred, with a break cut into the stems |
+
+Every face covers Latin, Cyrillic and accented Latin, so a word never comes out
+half in one face and half in another. Around 40 common emoji are included as
+hand-drawn pictographs and can be typed or pasted into any face. Faces are
+chosen per stamp rather than per message, so one bitmap can mix them freely.
+
+Faces are authored as pixel art in `fonts/*.face`, not as hex tables. Nobody can
+review a letterform by reading `0x7C`. `fonts/build.py` generates the Rust
+tables and `fonts/derive.py` builds each face's Cyrillic and accented Latin from
+the letters it already has, so a face inherits its own weight and proportions
+rather than borrowing another's.
+
+Images can be imported with an adjustable black and white threshold.
 
 The preview runs at the badge's real speed, so timing looks the same on screen
 as it does on the hardware. A scrub bar steps through any animation or effect a
