@@ -49,8 +49,8 @@ Prebuilt packages for each release are on the
 
 | Platform | Download |
 |---|---|
-| macOS (Apple Silicon) | `Badge Studio_<version>_aarch64.dmg` |
-| Windows | `Badge Studio_<version>_x64-setup.exe` or `.msi` |
+| macOS (Apple Silicon) | `Badge.Studio_<version>_aarch64.dmg` |
+| Windows | `Badge.Studio_<version>_x64-setup.exe` or `.msi` |
 | Linux (Debian/Ubuntu) | `.deb` |
 | Linux (Fedora/RHEL) | `.rpm` |
 | Linux (portable) | `.AppImage` |
