@@ -225,6 +225,15 @@ present, and built unsigned when they are not:
 | `APPLE_PASSWORD` | An app-specific password, not the account password |
 | `APPLE_TEAM_ID` | The 10-character team identifier |
 
+`scripts/setup-macos-signing.sh` stores all six. It reads the signing identity
+and team ID out of your keychain, prompts for the rest, and pipes the values
+straight to `gh secret set` so they are never written to disk or echoed.
+
+```bash
+./scripts/setup-macos-signing.sh --check          # what is already set
+./scripts/setup-macos-signing.sh certificate.p12  # set everything
+```
+
 ```bash
 git tag -a v1.0.0 -m "Badge Studio 1.0.0"
 git push origin v1.0.0
