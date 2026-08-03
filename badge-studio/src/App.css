@@ -138,14 +138,78 @@ body {
 
 .slot-list li {
   display: grid;
-  grid-template-columns: 18px 1fr auto auto;
+  grid-template-columns: 18px 1fr auto auto auto;
   align-items: center;
   gap: 6px;
   padding: 7px 8px;
   border-radius: 6px;
   background: var(--panel-2);
   border: 1px solid transparent;
-  cursor: pointer;
+  cursor: grab;
+  position: relative;
+  /* A drag that selects the label text as it goes looks broken. */
+  user-select: none;
+  touch-action: none;
+}
+
+.slot-list li:focus-visible {
+  outline: 1px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.slot-list li.selected {
+  background: #1a2233;
+  border-color: var(--blue);
+}
+
+/* Off: still here, still editable, just not part of the upload. Dimmed rather
+   than struck through, because the artwork is not deleted. */
+.slot-list li.off .slot-name,
+.slot-list li.off .muted {
+  opacity: 0.45;
+}
+
+.slot-list li.off .slot-index {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.slot-list li.lifting {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* Where the block would land. Drawn on the row rather than as a moving
+   placeholder so the list never reflows mid-drag, which is what makes a
+   drop target jump away from the pointer. */
+.slot-list li.drop-above::before,
+.slot-list li.drop-below::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--blue);
+  border-radius: 1px;
+}
+
+.slot-list li.drop-above::before {
+  top: -3px;
+}
+
+.slot-list li.drop-below::after {
+  bottom: -3px;
+}
+
+.slot-toggle {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  color: var(--muted);
+}
+
+.slot-list li:not(.off) .slot-toggle {
+  color: #35c37d;
 }
 
 .slot-list li:hover {

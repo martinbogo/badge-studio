@@ -13,7 +13,14 @@
 // limitations under the License.
 
 import { describe, expect, it } from "vitest";
-import { previewPeriod, renderPreview, stepDelay } from "./badge";
+import {
+  enabledMessages,
+  moveTo,
+  nextSelection,
+  previewPeriod,
+  renderPreview,
+  stepDelay,
+} from "./badge";
 import { BADGE_HEIGHT, BADGE_WIDTH, MODES, type Frame, type Message } from "./types";
 
 function frameFrom(rows: string[]): Frame {
@@ -28,6 +35,7 @@ function msg(mode: Message["mode"], frames: Frame[]): Message {
     speed: 4,
     blink: false,
     ants: false,
+    enabled: true,
     frames,
     width: frames[0][0].length,
   };
@@ -219,5 +227,109 @@ describe("stepDelay", () => {
   it("clamps out-of-range speeds", () => {
     expect(stepDelay(0)).toBe(stepDelay(1));
     expect(stepDelay(99)).toBe(stepDelay(8));
+  });
+});
+
+describe("moveTo", () => {
+  const items = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+  const ids = (...s: string[]) => new Set(s);
+  const order = (r: { id: string }[]) => r.map((x) => x.id).join("");
+
+  it("moves one item down", () => {
+    // Gaps count the original list, so gap 3 is between c and d.
+    expect(order(moveTo(items, ids("a"), 3))).toBe("bcade");
+  });
+
+  it("moves one item up", () => {
+    expect(order(moveTo(items, ids("d"), 1))).toBe("adbce");
+  });
+
+  it("keeps a multi-selection in its own order, not click order", () => {
+    expect(order(moveTo(items, ids("d", "b"), 0))).toBe("bdace");
+  });
+
+  it("gathers a non-contiguous selection into one block", () => {
+    expect(order(moveTo(items, ids("a", "c", "e"), 5))).toBe("bdace");
+  });
+
+  it("treats the gap as a position in the original list", () => {
+    // Dropping b into the gap it already occupies changes nothing, which is
+    // the case that breaks when the gap is not corrected for lifted items.
+    expect(order(moveTo(items, ids("b"), 1))).toBe("abcde");
+    expect(order(moveTo(items, ids("b"), 2))).toBe("abcde");
+  });
+
+  it("clamps a gap past either end", () => {
+    expect(order(moveTo(items, ids("c"), 99))).toBe("abdec");
+    expect(order(moveTo(items, ids("c"), -5))).toBe("cabde");
+  });
+
+  it("is a no-op when nothing is selected", () => {
+    expect(moveTo(items, ids(), 2)).toBe(items);
+  });
+});
+
+describe("enabledMessages", () => {
+  const m = (id: string, enabled: boolean) => ({ ...msg("fixed", [frameFrom(["#"])]), id, enabled });
+
+  it("drops the switched-off slots and keeps the order", () => {
+    const all = [m("1", true), m("2", false), m("3", true)];
+    expect(enabledMessages(all).map((x) => x.id)).toEqual(["1", "3"]);
+  });
+
+  it("treats a slot from an older document as on", () => {
+    const legacy = { ...msg("fixed", [frameFrom(["#"])]), id: "old" } as Message;
+    delete (legacy as { enabled?: boolean }).enabled;
+    expect(enabledMessages([legacy])).toHaveLength(1);
+  });
+});
+
+describe("nextSelection", () => {
+  const ids = ["a", "b", "c", "d", "e"];
+  const set = (...s: string[]) => new Set(s);
+  const plain = { meta: false, shift: false };
+
+  it("replaces the selection on a plain click", () => {
+    const r = nextSelection(ids, set("a", "b"), "a", "d", plain);
+    expect([...r.selected]).toEqual(["d"]);
+    expect(r.anchor).toBe("d");
+  });
+
+  it("adds and removes with the meta key", () => {
+    const add = nextSelection(ids, set("a"), "a", "c", { meta: true, shift: false });
+    expect([...add.selected].sort()).toEqual(["a", "c"]);
+    const drop = nextSelection(ids, add.selected, "c", "a", { meta: true, shift: false });
+    expect([...drop.selected]).toEqual(["c"]);
+  });
+
+  it("takes the range from the anchor, in either direction", () => {
+    const down = nextSelection(ids, set("b"), "b", "d", { meta: false, shift: true });
+    expect([...down.selected]).toEqual(["b", "c", "d"]);
+    const up = nextSelection(ids, set("d"), "d", "b", { meta: false, shift: true });
+    expect([...up.selected]).toEqual(["b", "c", "d"]);
+  });
+
+  it("leaves the anchor alone on a range, so shift can resize it", () => {
+    const first = nextSelection(ids, set("b"), "b", "e", { meta: false, shift: true });
+    expect(first.anchor).toBe("b");
+    // Shift-clicking somewhere closer shrinks the range rather than starting
+    // a new one from the previous end.
+    const second = nextSelection(ids, first.selected, first.anchor, "c", {
+      meta: false,
+      shift: true,
+    });
+    expect([...second.selected]).toEqual(["b", "c"]);
+  });
+
+  it("treats shift with no anchor as a plain click", () => {
+    const r = nextSelection(ids, set(), null, "c", { meta: false, shift: true });
+    expect([...r.selected]).toEqual(["c"]);
+    expect(r.anchor).toBe("c");
+  });
+
+  it("moves the anchor even when meta deselects, so a later range starts there", () => {
+    const r = nextSelection(ids, set("a", "b"), "a", "b", { meta: true, shift: false });
+    expect([...r.selected]).toEqual(["a"]);
+    expect(r.anchor).toBe("b");
   });
 });

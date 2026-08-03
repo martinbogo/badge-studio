@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { byteColumns } from "../badge";
+import { byteColumns, enabledMessages } from "../badge";
 import {
   FRAME_WIDTH,
   KNOWN_GOOD_COLUMNS,
@@ -139,7 +139,9 @@ export default function TransportBar({
   // firmware advances 48, so the same document is a different payload on the
   // two. Until a badge says otherwise the readout assumes stock.
   const stride = usb?.firmware === "badge-magic" ? 44 : FRAME_WIDTH;
-  const used = messages.reduce((n, m) => n + byteColumns(m, stride), 0);
+  // A slot switched off costs nothing: it is not transmitted.
+  const live = enabledMessages(messages);
+  const used = live.reduce((n, m) => n + byteColumns(m, stride), 0);
   const bytes = 64 + used * 11;
   const unproven = used > KNOWN_GOOD_COLUMNS;
   const pct = Math.min(100, Math.round((used / KNOWN_GOOD_COLUMNS) * 100));
@@ -184,13 +186,24 @@ export default function TransportBar({
       setStatus(null);
       setProgress(null);
 
+      // Every slot switched off is a document with nothing to send. Say so
+      // here rather than letting the encoder report an empty message list,
+      // which reads like a bug in the project rather than a switch that is off.
+      if (!live.length) {
+        setError(
+          "Every message is switched off, so there is nothing to send. " +
+            "Turn at least one back on with the dot beside its name."
+        );
+        return;
+      }
+
       if (usb) {
         setBusy("send");
         startedAt.current = Date.now();
         setRate(null);
         try {
           const sent = await invoke<number>("send_to_badge_usb", {
-            messages: messages.map(toSpec),
+            messages: live.map(toSpec),
             brightness,
           });
           setStatus(`Sent ${sent} bytes over USB.`);
@@ -229,7 +242,7 @@ export default function TransportBar({
       setRate(null);
       try {
         const sent = await invoke<number>("send_to_badge", {
-          messages: messages.map(toSpec),
+          messages: live.map(toSpec),
           brightness,
           deviceId: target,
         });
@@ -250,7 +263,7 @@ export default function TransportBar({
         startedAt.current = null;
       }
     },
-    [usb, selected, scan, messages, brightness]
+    [usb, selected, scan, live, brightness]
   );
 
   const detail = busy || progress || error || status || showPairing;

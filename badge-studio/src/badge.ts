@@ -81,7 +81,77 @@ export function newMessage(mode: Mode = "scroll_left"): Message {
     ants: false,
     frames: [blankFrame(width)],
     width,
+    enabled: true,
   };
+}
+
+/**
+ * Move every message in `ids` so the block lands at gap position `gap`.
+ *
+ * `gap` counts the slots in the original list, so gap 0 is above the first and
+ * gap n is below the last. The moved items keep their order relative to each
+ * other, which is what makes dragging a multiple selection predictable.
+ */
+export function moveTo<T extends { id: string }>(
+  items: T[],
+  ids: Set<string>,
+  gap: number
+): T[] {
+  const moving = items.filter((i) => ids.has(i.id));
+  if (!moving.length) return items;
+  const rest = items.filter((i) => !ids.has(i.id));
+  // Anything being moved out from above the gap shifts it up by one.
+  const lifted = items.slice(0, gap).filter((i) => ids.has(i.id)).length;
+  const at = Math.max(0, Math.min(rest.length, gap - lifted));
+  return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+}
+
+/** Which modifier keys were held for a click on a slot. */
+export interface ClickMods {
+  /** Cmd on macOS, Ctrl elsewhere. */
+  meta: boolean;
+  shift: boolean;
+}
+
+/**
+ * The selection after clicking slot `id`, and the anchor to remember.
+ *
+ * The three behaviours are the ones every list in every file manager has:
+ * plain click replaces, Cmd/Ctrl toggles one, Shift takes the range from the
+ * last anchored click. Kept out of the component so the rules can be tested
+ * rather than clicked at.
+ */
+export function nextSelection(
+  ids: string[],
+  current: Set<string>,
+  anchor: string | null,
+  id: string,
+  mods: ClickMods
+): { selected: Set<string>; anchor: string | null } {
+  if (mods.meta) {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    // The anchor follows the click even when it deselects, so a following
+    // Shift-click ranges from where the pointer actually was.
+    return { selected: next, anchor: id };
+  }
+  if (mods.shift && anchor !== null) {
+    const a = ids.indexOf(anchor);
+    const b = ids.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      const [lo, hi] = a < b ? [a, b] : [b, a];
+      // The anchor stays put, so dragging the range back and forth with Shift
+      // grows and shrinks it instead of walking away.
+      return { selected: new Set(ids.slice(lo, hi + 1)), anchor };
+    }
+  }
+  return { selected: new Set([id]), anchor: id };
+}
+
+/** The slots the badge will actually receive, in order. */
+export function enabledMessages(messages: Message[]): Message[] {
+  return messages.filter((m) => m.enabled !== false);
 }
 
 /** Overlay a bitmap onto a frame at (ox, oy), growing the frame if needed. */

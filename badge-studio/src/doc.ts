@@ -131,6 +131,9 @@ function readMessage(raw: unknown, index: number): Message {
     ants: Boolean(m.ants),
     frames: out,
     width: w,
+    // Absent in documents written before slots could be switched off, and a
+    // slot nobody disabled is an enabled one.
+    enabled: m.enabled === undefined ? true : Boolean(m.enabled),
   };
 }
 

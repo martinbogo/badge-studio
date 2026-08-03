@@ -21,6 +21,7 @@ import BadgePreview from "./components/BadgePreview";
 import TransportBar from "./components/TransportBar";
 import PlaybackBar from "./components/PlaybackBar";
 import EmojiPalette from "./components/EmojiPalette";
+import SlotList from "./components/SlotList";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Modal from "./components/Modal";
@@ -53,6 +54,8 @@ import {
 import {
   byteColumns,
   blankFrame,
+  enabledMessages,
+  moveTo,
   cloneFrame,
   flipH,
   flipV,
@@ -150,6 +153,8 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(1);
   const [filled, setFilled] = useState(false);
   const [selection, setSelection] = useState<Rect | null>(null);
+  /** Message slots picked out for a multi-slot drag. */
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [clipboard, setClipboard] = useState<boolean[][] | null>(null);
 
   // The file this document belongs to, and the exact bytes last written to it.
@@ -387,10 +392,10 @@ export default function App() {
     updateFrame(() => prev.map((row) => row.slice()));
   }, [active, frameIndex, updateFrame]);
 
-  const slots = useMemo(
-    () => sequenceSlots(project.messages),
-    [project.messages]
-  );
+  // Built from the enabled slots only, so the whole-sequence preview matches
+  // what the badge is going to play rather than what the list happens to show.
+  const live = useMemo(() => enabledMessages(project.messages), [project.messages]);
+  const slots = useMemo(() => sequenceSlots(live), [live]);
 
   // In sequence scope the step counts across every slot, so the message being
   // shown is whichever the playhead is inside, not the one being edited.
@@ -398,7 +403,7 @@ export default function App() {
     () => (scope === "sequence" ? sequenceAt(slots, step) : null),
     [scope, slots, step]
   );
-  const shown = here ? project.messages[here.slot.index] ?? active : active;
+  const shown = here ? live[here.slot.index] ?? active : active;
   const shownStep = here ? here.local : step;
 
   const period = useMemo(
@@ -671,6 +676,7 @@ export default function App() {
   const textBudget = useMemo(() => {
     const others = project.messages
       .filter((m) => m.id !== activeId)
+      .filter((m) => m.enabled !== false)
       .reduce((n, m) => n + byteColumns(m), 0);
     return Math.max(0, MAX_BYTE_COLUMNS - others);
   }, [project.messages, activeId]);
@@ -708,6 +714,23 @@ export default function App() {
       });
     },
     [textInput, textBudgetPx, faceId]
+  );
+
+  const reorder = useCallback(
+    (ids: Set<string>, gap: number) =>
+      commit({ ...project, messages: moveTo(project.messages, ids, gap) }),
+    [project, commit]
+  );
+
+  const toggleEnabled = useCallback(
+    (id: string) =>
+      commit({
+        ...project,
+        messages: project.messages.map((m) =>
+          m.id === id ? { ...m, enabled: m.enabled === false } : m
+        ),
+      }),
+    [project, commit]
   );
 
   const currentJson = useMemo(() => serializeProject(project), [project]);
@@ -1054,39 +1077,20 @@ export default function App() {
               {project.messages.length}/{MAX_MESSAGES}
             </span>
           </h2>
-          <ul className="slot-list">
-            {project.messages.map((m, i) => (
-              <li
-                key={m.id}
-                className={[
-                  m.id === activeId ? "active" : "",
-                  here?.slot.index === i ? "playing" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => {
-                  setActiveId(m.id);
-                  setFrameIndex(0);
-                }}
-              >
-                <span className="slot-index">{i + 1}</span>
-                <span className="slot-name">{m.name}</span>
-                <span className="muted small">{MODE_LABELS[m.mode]}</span>
-                {project.messages.length > 1 && (
-                  <button
-                    className="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeMessage(m.id);
-                    }}
-                    title="Remove message"
-                  >
-                    x
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+          <SlotList
+            messages={project.messages}
+            activeId={activeId}
+            playing={here ? project.messages.indexOf(live[here.slot.index]) : null}
+            selected={picked}
+            onSelected={setPicked}
+            onActivate={(id) => {
+              setActiveId(id);
+              setFrameIndex(0);
+            }}
+            onReorder={reorder}
+            onToggleEnabled={toggleEnabled}
+            onRemove={removeMessage}
+          />
           <button
             onClick={addMessage}
             disabled={project.messages.length >= MAX_MESSAGES}

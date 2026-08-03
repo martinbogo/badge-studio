@@ -85,6 +85,15 @@ export interface Message {
   frames: Frame[];
   /** Pixel width of every frame in this message. */
   width: number;
+  /**
+   * Whether this slot is sent to the badge.
+   *
+   * A disabled slot stays in the document, keeps its artwork and its place in
+   * the list, and is simply left out of the upload. The badge has no concept
+   * of an empty slot, so the enabled ones close up: turning slot 4 off sends
+   * seven messages and the badge cycles seven.
+   */
+  enabled: boolean;
 }
 
 export type Brightness = 25 | 50 | 75 | 100;
