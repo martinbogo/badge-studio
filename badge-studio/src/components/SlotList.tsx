@@ -174,9 +174,6 @@ export default function SlotList({
           }}
           onKeyDown={(e) => onKeyDown(m, e)}
         >
-          <span className="slot-index">{i + 1}</span>
-          <span className="slot-name">{m.name}</span>
-          <span className="muted small">{MODE_LABELS[m.mode]}</span>
           <button
             className="ghost slot-toggle"
             onClick={(e) => {
@@ -192,6 +189,9 @@ export default function SlotList({
           >
             {m.enabled === false ? "○" : "●"}
           </button>
+          <span className="slot-index">{i + 1}</span>
+          <span className="slot-name">{m.name}</span>
+          <span className="muted small">{MODE_LABELS[m.mode]}</span>
           {messages.length > 1 && (
             <button
               className="ghost"

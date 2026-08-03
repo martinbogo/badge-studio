@@ -138,7 +138,7 @@ body {
 
 .slot-list li {
   display: grid;
-  grid-template-columns: 18px 1fr auto auto auto;
+  grid-template-columns: auto 18px 1fr auto auto;
   align-items: center;
   gap: 6px;
   padding: 7px 8px;
@@ -201,11 +201,20 @@ body {
   bottom: -3px;
 }
 
+/* Kept at the far left, with the whole row between it and the delete button.
+   They were adjacent and 11px apart, which is close enough that reaching for
+   one and hitting the other is a matter of when rather than whether, and one
+   of them destroys work. */
 .slot-toggle {
   font-size: 10px;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 2px 3px;
   color: var(--muted);
+}
+
+/* A little more air on the destructive one. */
+.slot-list li > button:last-child:not(.slot-toggle) {
+  margin-left: 4px;
 }
 
 .slot-list li:not(.off) .slot-toggle {
