@@ -1,0 +1,64 @@
+name: Checks
+
+# The font tables under badge-studio/src-tauri/src/font/ are generated from the
+# pixel art in fonts/, and each face's Cyrillic and accented Latin are derived
+# from its own Latin. Both are committed, so a normal build never runs the
+# generators, and nothing otherwise stops the two drifting apart: edit a
+# letterform without rerunning them and the committed table keeps the old
+# shape, or the Cyrillic keeps a weight the Latin no longer has. Neither
+# failure is visible in a diff review.
+#
+# So rerun them here and fail if anything moved.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  generated-fonts-are-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate the faces
+        run: |
+          # derive.py first: it writes the Cyrillic and accented Latin back into
+          # the .face sources, which build.py then turns into Rust. The other
+          # order would compile the previous derivation.
+          python3 fonts/derive.py serif sans cartoon future
+          python3 fonts/build.py
+
+      - name: Nothing should have changed
+        run: |
+          if git diff --quiet; then
+            echo "Generated fonts match their sources."
+            exit 0
+          fi
+          echo "::error::Generated font files are out of date. Run:"
+          echo "::error::  python3 fonts/derive.py serif sans cartoon future && python3 fonts/build.py"
+          echo
+          # Names first, since a regenerated glyph table is thousands of lines
+          # of hex and the useful signal is which faces moved.
+          git diff --stat
+          echo
+          git diff -- fonts/
+          exit 1
+
+      - name: The generators must be idempotent
+        run: |
+          # derive.py reads the .face files it also writes to. If a second run
+          # differs from the first, it is seeing its own output as hand-drawn
+          # work, and the check above would pass or fail depending on how many
+          # times it happened to be run.
+          python3 fonts/derive.py serif sans cartoon future
+          python3 fonts/build.py
+          if ! git diff --quiet; then
+            echo "::error::Running the generators twice does not match running them once."
+            git diff --stat
+            exit 1
+          fi
+          echo "Second run is a no-op."

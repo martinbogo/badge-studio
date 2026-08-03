@@ -1,6 +1,6 @@
 [package]
 name = "badge-studio"
-version = "1.0.6"
+version = "1.0.10"
 description = "Animation studio for the nyx v1 LED badge"
 authors = ["Martin Bogomolni"]
 license = "Apache-2.0"
