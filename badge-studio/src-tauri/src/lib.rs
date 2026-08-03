@@ -247,7 +247,7 @@ async fn send_to_badge_usb(
 
     // hidapi is blocking, so keep it off the async runtime's threads.
     tokio::task::spawn_blocking(move || {
-        usb::send(&data, |chunk, total| {
+        usb::send(&data, move |chunk, total| {
             let _ = app.emit("send-progress", Progress { chunk, total });
         })
     })

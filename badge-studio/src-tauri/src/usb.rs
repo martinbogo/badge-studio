@@ -51,6 +51,8 @@ pub enum UsbError {
     Hid(#[from] hidapi::HidError),
     #[error("Could not enumerate USB devices: {0}")]
     Enumerate(nusb::Error),
+    #[error("{0}")]
+    Message(String),
     #[error(
         "No badge found on USB. Plug it in with the supplied cable. \
          On Linux this also needs a udev rule granting access to {VID:04x}:{PID:04x}, \
@@ -122,13 +124,69 @@ pub fn watch(app: AppHandle) {
     });
 }
 
+// --- the HID thread ------------------------------------------------------
+//
+// Every hidapi call happens on one thread that lives as long as the process.
+//
+// This is not tidiness. hidapi's macOS backend schedules the IOHIDManager on
+// the run loop of whichever thread first initialises it, and holds that run
+// loop internally. Calling it from tokio's blocking pool means that thread is
+// created and retired on demand, so once it retires IOKit is left holding a
+// deallocated CFRunLoop. The next enumeration walks it and dies inside
+// CFRunLoopAddSource with a pointer-authentication trap, which reads as a
+// crash in Apple's code rather than a lifetime mistake in ours.
+
+type ProgressFn = Box<dyn FnMut(usize, usize) + Send>;
+type Job = (Vec<u8>, ProgressFn, std::sync::mpsc::Sender<Result<usize, String>>);
+
+static HID: std::sync::OnceLock<std::sync::mpsc::Sender<Job>> = std::sync::OnceLock::new();
+
+fn hid_worker() -> Option<&'static std::sync::mpsc::Sender<Job>> {
+    HID.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Job>();
+        // Detached on purpose: it ends when the process does.
+        let started = std::thread::Builder::new()
+            .name("badge-hid".into())
+            .spawn(move || {
+                while let Ok((data, mut progress, reply)) = rx.recv() {
+                    let result = write_reports(&data, &mut progress).map_err(|e| e.to_string());
+                    let _ = reply.send(result);
+                }
+            });
+        if started.is_err() {
+            eprintln!("could not start the HID thread");
+        }
+        tx
+    });
+    HID.get()
+}
+
 /// Write the whole stream as 64-byte output reports.
 ///
 /// `on_progress` is called per report so the UI can share one progress bar with
 /// the Bluetooth path, even though this finishes fast enough to barely show.
+///
+/// Blocks until the HID thread has finished the transfer, so call it from
+/// somewhere blocking is allowed.
 pub fn send(
     data: &[u8],
-    mut on_progress: impl FnMut(usize, usize),
+    on_progress: impl FnMut(usize, usize) + Send + 'static,
+) -> Result<usize, UsbError> {
+    let worker = hid_worker()
+        .ok_or_else(|| UsbError::Message("The USB thread is not running.".into()))?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    worker
+        .send((data.to_vec(), Box::new(on_progress), tx))
+        .map_err(|_| UsbError::Message("The USB thread has stopped.".into()))?;
+    rx.recv()
+        .map_err(|_| UsbError::Message("The USB transfer ended without a result.".into()))?
+        .map_err(UsbError::Message)
+}
+
+/// The actual transfer. Only ever called on the HID thread.
+fn write_reports(
+    data: &[u8],
+    on_progress: &mut ProgressFn,
 ) -> Result<usize, UsbError> {
     let api = api()?;
     let dev = api.open(VID, PID).map_err(|e| match e {
