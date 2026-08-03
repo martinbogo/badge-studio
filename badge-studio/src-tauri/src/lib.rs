@@ -397,6 +397,10 @@ pub fn run() {
             // as an Apple Event at any time, including before the window is
             // ready, so the frontend re-asks for a pending file once it mounts
             // rather than relying on catching the event live.
+            //
+            // `Opened` exists only on macOS. Windows and Linux pass the file as
+            // an argument instead, which `pending_from_argv` handles at startup.
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
@@ -429,6 +433,7 @@ fn confirm_exit(app: AppHandle) {
 /// Files the OS asked us to open that the UI has not collected yet.
 static PENDING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
+#[cfg(target_os = "macos")]
 fn remember_pending(app: &AppHandle, path: String) {
     if let Ok(mut q) = PENDING.lock() {
         q.push(path.clone());
