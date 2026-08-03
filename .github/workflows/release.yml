@@ -57,6 +57,19 @@ jobs:
             label: windows-x86_64
 
     runs-on: ${{ matrix.os }}
+
+    # macOS code signing and notarization. Every one of these is optional: with
+    # the secrets unset they are empty strings, Tauri skips signing, and the
+    # build still succeeds unsigned. That is what happens on a fork, and what
+    # happened before the certificate existed.
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
     steps:
       - uses: actions/checkout@v5
 
@@ -100,6 +113,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: badge-studio
+
+      - name: Verify macOS signature
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          APP="$BUNDLE/macos/Badge Studio.app"
+          echo "--- codesign ---"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "--- identity ---"
+          codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|flags'
+          # Reports "Notarized Developer ID" once notarization has stapled.
+          # Informational: a valid signature is the hard requirement here.
+          echo "--- gatekeeper ---"
+          spctl -a -t exec -vvv "$APP" || true
 
       # Tauri has no tarball target, so build one from the bare binary. It has
       # no bundled webview and relies on the system webkit2gtk, which is why

@@ -213,6 +213,18 @@ GitHub release, which is then published by hand. The tag must match the version
 in `package.json`, `Cargo.toml` and `tauri.conf.json`, or the workflow stops
 before building.
 
+macOS builds are signed and notarized when these repository secrets are
+present, and built unsigned when they are not:
+
+| Secret | Value |
+|---|---|
+| `APPLE_CERTIFICATE` | Base64 of a "Developer ID Application" certificate exported as `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | The password set when exporting it |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID` | Apple ID used for notarization |
+| `APPLE_PASSWORD` | An app-specific password, not the account password |
+| `APPLE_TEAM_ID` | The 10-character team identifier |
+
 ```bash
 git tag -a v1.0.0 -m "Badge Studio 1.0.0"
 git push origin v1.0.0
