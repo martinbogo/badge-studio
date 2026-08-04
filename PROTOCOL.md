@@ -160,7 +160,7 @@ share one upload.
 off  size  field
   0   4    magic "wang" (77 61 6E 67)
   4   1    always 0x00
-  5   1    brightness: 0x00=100%  0x10=75%  0x20=50%  0x40=25%
+  5   1    brightness: 0x00=100%  0x10=75%  0x20=50%  0x30=25%
   6   1    blink bitmask, bit i = message i
   7   1    animated border bitmask, bit i = message i
   8   8    per-message option byte: (speed-1) << 4 | mode
@@ -173,6 +173,26 @@ off  size  field
 
 Unused message slots have a length of 0; the rest of their fields are
 don't-care. The timestamp is stored but never displayed.
+
+### A note on byte 5
+
+Brightness is a level index in the high nibble, counting from 0 as the
+brightest, and the panel has four levels. So the dimmest is `0x30`.
+
+This is worth stating plainly because most other clients for these badges send
+`0x40` for 25%, including the widely used
+[led-name-badge-ls32](https://github.com/jnweiger/led-name-badge-ls32), which
+has done so since the option was added in 2019. This document said `0x40` too,
+inherited from the same reverse engineering.
+
+On a CH582 badge `0x40` does not dim the display, it corrupts it: the value is
+an index rather than a bitmask, so `0x40` is index 4 of a table with entries
+0 to 3. The mistake is easy to make because `0x00`, `0x10`, `0x20`, `0x40`
+looks like a plausible set of bit flags, and nothing complains until you
+actually select the lowest brightness on hardware.
+
+`0x40` may well be correct on the older badges the other clients target. `0x30`
+is the value for this one.
 
 ### Modes
 

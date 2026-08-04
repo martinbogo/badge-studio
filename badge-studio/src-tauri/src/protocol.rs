@@ -107,12 +107,26 @@ pub enum ProtocolError {
     TooManyFrames { got: usize },
 }
 
+/// Header byte 5: a brightness level in the high nibble, 0 brightest.
+///
+/// Note that 25% is 0x30 and not 0x40, which is what every other client for
+/// these badges sends, including this one until it was tested on hardware.
+/// The reference implementation, jnweiger/led-name-badge-ls32, has used 0x40
+/// since the option was added in 2019, and this project inherited it from the
+/// same reverse engineering.
+///
+/// On a CH582 badge 0x40 does not dim the display, it corrupts it. The values
+/// are a level index rather than a bitmask, and the panel has four levels, so
+/// 0x40 is index 4 of 0..3 and the firmware reads past the end of its own
+/// table. 0x30 completes the sequence and works. It may well be that 0x40 is
+/// correct on the older hardware the reference targets; this is the value for
+/// this one.
 fn brightness_bits(percent: u8) -> Result<u8, ProtocolError> {
     Ok(match percent {
         100 => 0x00,
         75 => 0x10,
         50 => 0x20,
-        25 => 0x40,
+        25 => 0x30,
         other => return Err(ProtocolError::BadBrightness(other)),
     })
 }
@@ -279,7 +293,7 @@ mod tests {
         let mut b = msg(1, Mode::Laser, 8);
         b.ants = true;
         let out = pack(&[a, b], 25, Stamp::default()).unwrap();
-        assert_eq!(out[5], 0x40);
+        assert_eq!(out[5], 0x30, "dimmest of the four levels");
         assert_eq!(out[6], 0b01, "blink only on message 0");
         assert_eq!(out[7], 0b10, "ants only on message 1");
         assert_eq!(out[8], 0x00);
@@ -423,13 +437,35 @@ mod width_tests {
 mod brightness_tests {
     use super::*;
 
+    /// The four levels are consecutive, 0x00 through 0x30.
+    ///
+    /// Worth asserting as a shape rather than only as four constants: the
+    /// value this project shipped for two years was 0x40, which looks
+    /// plausible next to 0x10 and 0x20 and is what other clients send, but
+    /// leaves a gap at 0x30 and is one past the last level the panel has. It
+    /// did not dim the display, it corrupted it.
+    #[test]
+    fn the_levels_are_consecutive_with_no_gap() {
+        let bits: Vec<u8> = [100u8, 75, 50, 25]
+            .iter()
+            .map(|p| brightness_bits(*p).unwrap())
+            .collect();
+        assert_eq!(bits, vec![0x00, 0x10, 0x20, 0x30]);
+        // Dimmer is a higher index, and every step is the same size.
+        for w in bits.windows(2) {
+            assert_eq!(w[1] - w[0], 0x10);
+        }
+        // Nothing lands outside the four levels the hardware has.
+        assert!(bits.iter().all(|b| b >> 4 < 4));
+    }
+
     /// Brightness is header byte 5, sent with every upload. It is the one
     /// display setting that applies to the whole badge rather than a message.
     #[test]
     fn brightness_lands_in_header_byte_5() {
         let frame = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
         let (bitmap, columns) = pixels_to_bitmap(&frame);
-        for (percent, expected) in [(100u8, 0x00u8), (75, 0x10), (50, 0x20), (25, 0x40)] {
+        for (percent, expected) in [(100u8, 0x00u8), (75, 0x10), (50, 0x20), (25, 0x30)] {
             let m = Message {
                 bitmap: bitmap.clone(),
                 columns,
