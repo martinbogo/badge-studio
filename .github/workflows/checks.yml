@@ -83,17 +83,19 @@ jobs:
       # hidraw backend needs. `cargo test` links the whole library, so the
       # build dependencies are required even though no window is opened.
       #
-      # Cached because they were half this job: 41 seconds of apt against 18
-      # seconds of actually running the tests. The list never changes, so
-      # fetching it on every push was the single most wasteful thing here.
+      # Installed the plain way on purpose. These are 41 of this job's 81
+      # seconds and caching them looks like the obvious win, but the usual
+      # action for it restores the package files without leaving a working
+      # development environment behind: the build then fails at link time
+      # looking for -ludev and -lwebkit2gtk-4.1. Tried, reverted. Forty
+      # seconds is not worth a build that cannot link.
       - name: Install Linux build dependencies
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: >-
-            libwebkit2gtk-4.1-dev build-essential curl wget file
-            libxdo-dev libssl-dev libayatana-appindicator3-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
             librsvg2-dev libudev-dev
-          version: 1
 
       - name: Test
         working-directory: badge-studio/src-tauri
