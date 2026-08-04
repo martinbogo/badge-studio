@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applyBorder,
   enabledMessages,
   moveTo,
   nextSelection,
@@ -331,5 +332,63 @@ describe("nextSelection", () => {
     const r = nextSelection(ids, set("a", "b"), "a", "b", { meta: true, shift: false });
     expect([...r.selected]).toEqual(["a"]);
     expect(r.anchor).toBe("b");
+  });
+});
+
+describe("applyBorder", () => {
+  const blank = (): Frame =>
+    Array.from({ length: BADGE_HEIGHT }, () =>
+      Array<boolean>(BADGE_WIDTH).fill(false)
+    );
+
+  const ring = (f: Frame) => {
+    const out: boolean[] = [];
+    for (let y = 0; y < BADGE_HEIGHT; y++) out.push(f[y][0]);
+    for (let x = 1; x < BADGE_WIDTH; x++) out.push(f[BADGE_HEIGHT - 1][x]);
+    for (let y = BADGE_HEIGHT - 2; y >= 0; y--) out.push(f[y][BADGE_WIDTH - 1]);
+    for (let x = BADGE_WIDTH - 2; x >= 1; x--) out.push(f[0][x]);
+    return out;
+  };
+
+  it("lights one pixel in four around the whole edge", () => {
+    const r = ring(applyBorder(blank(), 0));
+    expect(r).toHaveLength(2 * (BADGE_WIDTH + BADGE_HEIGHT) - 4);
+    // Every fourth, counted from the start of the ring.
+    r.forEach((lit, i) => expect(lit).toBe(i % 4 === 0));
+  });
+
+  it("marches counterclockwise, one pixel per step", () => {
+    // The ring is built counterclockwise, so the lit index moving forward
+    // through it is the border moving counterclockwise on the panel.
+    for (const step of [1, 2, 3, 7]) {
+      const r = ring(applyBorder(blank(), step));
+      r.forEach((lit, i) => expect(lit).toBe((i - step) % 4 === 0 || (i - step + 4) % 4 === 0));
+    }
+  });
+
+  it("returns to where it started after four steps", () => {
+    expect(ring(applyBorder(blank(), 4))).toEqual(ring(applyBorder(blank(), 0)));
+  });
+
+  it("overrides whatever the message was showing on the edge", () => {
+    const solid = blank().map((row) => row.map(() => true));
+    const out = applyBorder(solid, 0);
+    // Three edge pixels in four are now dark despite the frame being full.
+    expect(ring(out).filter((v) => !v).length).toBeGreaterThan(70);
+    // The interior is untouched.
+    expect(out[5][20]).toBe(true);
+  });
+
+  it("leaves the interior alone entirely", () => {
+    const out = applyBorder(blank(), 0);
+    for (let y = 1; y < BADGE_HEIGHT - 1; y++) {
+      for (let x = 1; x < BADGE_WIDTH - 1; x++) expect(out[y][x]).toBe(false);
+    }
+  });
+
+  it("is applied by renderPreview only when the message asks for it", () => {
+    const plain = msg("fixed", [frameFrom(["#"])]);
+    expect(renderPreview(plain, 0)[0][0]).toBe(false);
+    expect(renderPreview({ ...plain, ants: true }, 0)[0][0]).toBe(true);
   });
 });

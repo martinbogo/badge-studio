@@ -125,23 +125,6 @@ export default function BadgePreview({
       }
     }
 
-    if (message?.ants) {
-      // Animated border marches around the display edge.
-      ctx.fillStyle = pal.on;
-      const phase = step % 4;
-      const dot = Math.max(2, Math.round(cell * 0.25));
-      for (let x = 0; x < BADGE_WIDTH; x++) {
-        if ((x + phase) % 4 === 0) {
-          ctx.fillRect(pad + x * cell + cell / 2 - dot / 2, pad / 2 - dot / 2, dot, dot);
-          ctx.fillRect(
-            pad + x * cell + cell / 2 - dot / 2,
-            h - pad / 2 - dot / 2,
-            dot,
-            dot
-          );
-        }
-      }
-    }
   }, [message, step, brightness, blinkOn, cell, led]);
 
   return (

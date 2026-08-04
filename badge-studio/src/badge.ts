@@ -230,6 +230,48 @@ function idiv(a: number, b: number): number {
   return Math.trunc(a / b);
 }
 
+/**
+ * The display's outer ring, counterclockwise from the top-left corner.
+ *
+ * Counterclockwise on a screen, where y grows downward, means down the left
+ * edge first, then right along the bottom, up the right edge, and back along
+ * the top.
+ */
+function perimeter(): Array<[number, number]> {
+  const ring: Array<[number, number]> = [];
+  for (let y = 0; y < BADGE_HEIGHT; y++) ring.push([0, y]);
+  for (let x = 1; x < BADGE_WIDTH; x++) ring.push([x, BADGE_HEIGHT - 1]);
+  for (let y = BADGE_HEIGHT - 2; y >= 0; y--) ring.push([BADGE_WIDTH - 1, y]);
+  for (let x = BADGE_WIDTH - 2; x >= 1; x--) ring.push([x, 0]);
+  return ring;
+}
+
+const RING = perimeter();
+
+/**
+ * The marching border, drawn over whatever the message was showing.
+ *
+ * One lit pixel in every four, stepping counterclockwise around the outer ring
+ * of the panel. It is not decoration drawn beside the display: it takes those
+ * pixels, so anything the message would have shown in the outermost row or
+ * column is replaced. Which is why this belongs in the rendered frame rather
+ * than in the canvas that draws it.
+ *
+ * The ring is 106 pixels and 106 is not a multiple of four, so the pattern
+ * cannot tile evenly and there is one place where two lit pixels sit two
+ * apart rather than four. That seam is in the hardware too; a counter walking
+ * the perimeter has nowhere else to put it.
+ */
+export function applyBorder(view: Frame, step: number): Frame {
+  for (let i = 0; i < RING.length; i++) {
+    const [x, y] = RING[i];
+    // Subtracting the step advances the lit pixel along the ring, which is the
+    // direction the ring itself was built in.
+    view[y][x] = (((i - step) % 4) + 4) % 4 === 0;
+  }
+  return view;
+}
+
 function blankView(): Frame {
   return Array.from({ length: BADGE_HEIGHT }, () =>
     Array<boolean>(BADGE_WIDTH).fill(false)
@@ -256,6 +298,11 @@ function paging(newWidth: number, step: number, pageDuration: number) {
  * window.
  */
 export function renderPreview(m: Message, step: number): Frame {
+  const view = renderMode(m, step);
+  return m.ants ? applyBorder(view, step) : view;
+}
+
+function renderMode(m: Message, step: number): Frame {
   const view = blankView();
   const grid = m.frames[0] ?? blankView();
   const newWidth = grid[0]?.length ?? BADGE_WIDTH;
