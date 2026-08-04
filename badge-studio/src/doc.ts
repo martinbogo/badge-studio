@@ -39,25 +39,73 @@ import {
   type Project,
 } from "./types";
 
-/** Bumped only for changes old builds could not read. */
-export const DOC_VERSION = 1;
+/**
+ * Bumped only for changes old builds could not read.
+ *
+ * Version 2 stores a frame as eleven strings of `.` and `#` rather than as
+ * arrays of `true` and `false`. A pretty-printed boolean array puts every
+ * pixel on its own line, so a full badge came to 584 KB of mostly the word
+ * "false"; the same document is 42 KB as rows. Strings rather than packed
+ * base64 because a `.badge` is a document people share and diff, and this way
+ * the art is legible in a text editor, the same choice `fonts/*.face` makes.
+ */
+export const DOC_VERSION = 2;
+
+/** A frame on disk in version 2: one string per row, `#` lit and `.` dark. */
+const LIT = "#";
+const DARK = ".";
 
 export const PROJECT_EXT = "badge";
 export const MESSAGE_EXT = "badgemsg";
 
 export class DocError extends Error {}
 
+/** A message as written, which is not quite a `Message`. */
+interface StoredMessage {
+  id: string;
+  name: string;
+  mode: Mode;
+  speed: number;
+  frames: string[][];
+  /** Omitted when false. */
+  blink?: boolean;
+  ants?: boolean;
+  /** Omitted when true, which is the overwhelmingly common case. */
+  enabled?: boolean;
+}
+
 interface ProjectFile {
   version: number;
   kind?: "project";
   brightness: Brightness;
-  messages: Message[];
+  messages: StoredMessage[];
 }
 
 interface MessageFile {
   version: number;
   kind: "message";
-  message: Message;
+  message: StoredMessage;
+}
+
+/**
+ * A message ready to write.
+ *
+ * `width` is not stored: it is the length of a row, so keeping a copy only
+ * creates something that can disagree with the pixels. The flags are left out
+ * at their defaults, which shortens the common message to five fields.
+ */
+function storeMessage(m: Message): StoredMessage {
+  const out: StoredMessage = {
+    id: m.id,
+    name: m.name,
+    mode: m.mode,
+    speed: m.speed,
+    frames: m.frames.map(encodeFrame),
+  };
+  if (m.blink) out.blink = true;
+  if (m.ants) out.ants = true;
+  if (m.enabled === false) out.enabled = false;
+  return out;
 }
 
 function checkVersion(v: unknown, what: string) {
@@ -72,12 +120,39 @@ function checkVersion(v: unknown, what: string) {
   }
 }
 
-function validFrame(f: unknown, width: number): f is Frame {
-  return (
-    Array.isArray(f) &&
-    f.length === BADGE_HEIGHT &&
-    f.every((row) => Array.isArray(row) && row.length === width)
-  );
+function encodeFrame(f: Frame): string[] {
+  return f.map((row) => row.map((p) => (p ? LIT : DARK)).join(""));
+}
+
+/**
+ * Read one frame, in either format.
+ *
+ * Detected per frame rather than from the version number alone: a document
+ * that has been hand-edited or half-converted should still open, and the two
+ * shapes are not confusable. Returns null if this is not a frame at all.
+ */
+function decodeFrame(f: unknown, where: string): Frame | null {
+  if (!Array.isArray(f) || f.length !== BADGE_HEIGHT) return null;
+
+  if (f.every((row) => typeof row === "string")) {
+    const rows = f as string[];
+    return rows.map((row) => {
+      for (const c of row) {
+        if (c !== LIT && c !== DARK && c !== "1" && c !== "0") {
+          throw new DocError(
+            `${where} has a pixel row containing ${JSON.stringify(c)}. ` +
+              `Rows use "${LIT}" for a lit pixel and "${DARK}" for a dark one.`
+          );
+        }
+      }
+      return [...row].map((c) => c === LIT || c === "1");
+    });
+  }
+
+  if (f.every((row) => Array.isArray(row))) {
+    return (f as unknown[][]).map((row) => row.map(Boolean));
+  }
+  return null;
 }
 
 /** Coerce one message, repairing what is safely repairable and rejecting the rest. */
@@ -89,18 +164,26 @@ function readMessage(raw: unknown, index: number): Message {
   const m = raw as Partial<Message>;
 
   const mode: Mode = MODES.includes(m.mode as Mode) ? (m.mode as Mode) : "scroll_left";
-  const frames = Array.isArray(m.frames) ? m.frames : [];
-  if (!frames.length) {
+  const rawFrames = Array.isArray(m.frames) ? (m.frames as unknown[]) : [];
+  if (!rawFrames.length) {
     throw new DocError(`${where} has no frames.`);
   }
 
-  // Trust the frames over the stored width: a hand-edited file can disagree
+  const decoded = rawFrames.map((f) => decodeFrame(f, where));
+  if (decoded.some((f) => f === null)) {
+    throw new DocError(
+      `${where} has a frame that is not ${BADGE_HEIGHT} rows of pixels.`
+    );
+  }
+  const frames = decoded as Frame[];
+
+  // Trust the frames over any stored width: a hand-edited file can disagree
   // with itself, and the pixels are the thing that cannot be recomputed.
   const width = frames[0]?.[0]?.length ?? 0;
   if (width <= 0) {
     throw new DocError(`${where} has frames with no width.`);
   }
-  if (!frames.every((f) => validFrame(f, width))) {
+  if (!frames.every((f) => f.every((row) => row.length === width))) {
     throw new DocError(
       `${where} has frames of inconsistent size. Every frame must be ` +
         `${BADGE_HEIGHT} rows of ${width} pixels.`
@@ -109,7 +192,7 @@ function readMessage(raw: unknown, index: number): Message {
   // Projects saved before the editor moved to display width hold 48px frames,
   // the last four columns of which the badge cannot show. Trim them so what is
   // on screen is what will appear.
-  let out = frames.map((f) => f.map((row) => row.map(Boolean)));
+  let out: Frame[] = frames;
   let w = width;
   if (mode === "animation" && w > BADGE_WIDTH) {
     out = out.map((f) => f.map((row) => row.slice(0, BADGE_WIDTH)));
@@ -201,13 +284,17 @@ export function serializeProject(p: Project): string {
     version: DOC_VERSION,
     kind: "project",
     brightness: p.brightness,
-    messages: p.messages,
+    messages: p.messages.map(storeMessage),
   };
   return JSON.stringify(doc, null, 2);
 }
 
 export function serializeMessage(m: Message): string {
-  const doc: MessageFile = { version: DOC_VERSION, kind: "message", message: m };
+  const doc: MessageFile = {
+    version: DOC_VERSION,
+    kind: "message",
+    message: storeMessage(m),
+  };
   return JSON.stringify(doc, null, 2);
 }
 
