@@ -48,19 +48,19 @@ const project = (messages: Message[]): Project => ({ brightness: 100, messages }
 function asV1(p: Project): string {
   return JSON.stringify(
     {
-    version: 1,
-    kind: "project",
-    brightness: p.brightness,
-    messages: p.messages.map((m) => ({
-      id: m.id,
-      name: m.name,
-      mode: m.mode,
-      speed: m.speed,
-      blink: m.blink,
-      ants: m.ants,
-      frames: m.frames,
-      width: m.width,
-      enabled: m.enabled,
+      version: 1,
+      kind: "project",
+      brightness: p.brightness,
+      messages: p.messages.map((m) => ({
+        id: m.id,
+        name: m.name,
+        mode: m.mode,
+        speed: m.speed,
+        blink: m.blink,
+        ants: m.ants,
+        frames: m.frames,
+        width: m.width,
+        enabled: m.enabled,
       })),
     },
     null,
