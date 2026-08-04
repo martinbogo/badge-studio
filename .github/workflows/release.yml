@@ -100,13 +100,16 @@ jobs:
         working-directory: badge-studio
         run: npm ci
 
-      - name: Test
-        working-directory: badge-studio
-        run: npm test
-
-      - name: Test (Rust)
-        working-directory: badge-studio/src-tauri
-        run: cargo test --release
+      # The suites are deliberately not run here. checks.yml runs them on every
+      # push, including the push of this tag, so they have already passed on
+      # this exact commit. Running them again cost two minutes on Windows and
+      # bought nothing: `cargo test --release` compiles the crate, then
+      # tauri-action recompiles it, because the frontend build in between
+      # changes what the build script sees. Two full release compiles for one
+      # set of installers.
+      #
+      # What stops a broken commit shipping is not a second test run: it is
+      # that the release is created as a draft and published by hand.
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -189,3 +192,38 @@ jobs:
             --draft \
             dist/*
           echo "Draft release created. Review it, then publish from the Releases page."
+
+  # A tag-triggered run stores its caches under that tag's ref, and a tag never
+  # runs again, so they can never be read. They are not merely useless: the
+  # repository cache is capped, and once it fills GitHub evicts by least
+  # recent use, which eventually throws away the caches on main that every
+  # build actually restores from. Five old tags had already accumulated about
+  # a gigabyte of this.
+  #
+  # Deleting only tag-scoped caches on purpose. Branch and pull-request caches
+  # belong to work still in progress.
+  prune-caches:
+    needs: [release]
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Drop caches scoped to a tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh cache list --limit 100 --json id,ref,key > caches.json
+          jq -r '.[] | select(.ref | contains("refs/tags/")) | "\(.id)\t\(.key)"' caches.json > doomed.txt
+          if [ ! -s doomed.txt ]; then
+            echo "No tag-scoped caches to remove."
+            exit 0
+          fi
+          while IFS=$'\t' read -r id key; do
+            echo "removing $key"
+            gh cache delete "$id" || echo "  already gone"
+          done < doomed.txt
+          echo
+          gh api repos/${GH_REPO}/actions/cache/usage \
+            --jq '"now \(.active_caches_count) caches, \(.active_caches_size_in_bytes/1048576|floor) MB"'
