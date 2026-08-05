@@ -51,16 +51,6 @@ pub struct TextBitmap {
     pub missing: Vec<char>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct EncodeSummary {
-    pub total_bytes: usize,
-    pub payload_bytes: usize,
-    pub byte_columns: usize,
-    pub capacity_columns: usize,
-    pub chunks: usize,
-    /// Hex dump of the 64-byte header, for the inspector panel.
-    pub header_hex: String,
-}
 
 /// A failed send.
 ///
@@ -174,37 +164,6 @@ fn render_text(text: String, face: Option<String>) -> TextBitmap {
     }
 }
 
-#[tauri::command]
-fn encode_summary(
-    messages: Vec<MessageSpec>,
-    brightness: u8,
-    chunk_size: usize,
-    firmware: Option<Firmware>,
-) -> Result<EncodeSummary, String> {
-    // The stride changes the payload size, so the capacity readout is a
-    // different number on the two firmwares. Default to stock until the UI
-    // has been told otherwise.
-    let data = encode(&messages, brightness, firmware.unwrap_or_default())?;
-    let payload = data.len() - protocol::HEADER_SIZE;
-    let header_hex = data[..protocol::HEADER_SIZE]
-        .chunks(16)
-        .map(|c| {
-            c.iter()
-                .map(|b| format!("{b:02X}"))
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(EncodeSummary {
-        total_bytes: data.len(),
-        payload_bytes: payload,
-        byte_columns: payload / protocol::BADGE_HEIGHT,
-        capacity_columns: protocol::MAX_BYTE_COLUMNS,
-        chunks: data.len().div_ceil(chunk_size.max(1)),
-        header_hex,
-    })
-}
 
 /// Pick an image and hand it back as a data URL for the frontend to decode.
 /// Returns None if cancelled.
@@ -241,10 +200,6 @@ async fn pick_image(app: AppHandle) -> Result<Option<String>, String> {
     Ok(Some(format!("data:{mime};base64,{b64}")))
 }
 
-#[tauri::command]
-async fn ble_status() -> Result<String, String> {
-    ble::adapter_status().await.map_err(|e| e.to_string())
-}
 
 #[tauri::command]
 async fn ble_scan(
@@ -395,9 +350,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             render_text,
             font_metrics,
-            encode_summary,
             pick_image,
-            ble_status,
             ble_scan,
             usb_find,
             send_to_badge,
@@ -435,11 +388,11 @@ pub fn run() {
             // Quit from the menu or Cmd+Q does not go through the window's
             // close handler, so without this the one path most likely to be
             // used in a hurry is the one that loses work silently.
-            tauri::RunEvent::ExitRequested { api, .. } => {
-                if !EXIT_OK.load(std::sync::atomic::Ordering::SeqCst) {
-                    api.prevent_exit();
-                    let _ = app.emit("quit-requested", ());
-                }
+            tauri::RunEvent::ExitRequested { api, .. }
+                if !EXIT_OK.load(std::sync::atomic::Ordering::SeqCst) =>
+            {
+                api.prevent_exit();
+                let _ = app.emit("quit-requested", ());
             }
             _ => {}
         });
@@ -547,21 +500,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn summary_reports_capacity() {
-        let spec = MessageSpec {
-            frames: vec![blank_frame(44)],
-            mode: Mode::Fixed,
-            speed: 4,
-            blink: false,
-            ants: false,
-        };
-        let s = encode_summary(vec![spec], 100, 16, None).unwrap();
-        assert_eq!(s.byte_columns, 6);
-        assert_eq!(s.capacity_columns, protocol::MAX_BYTE_COLUMNS);
-        assert_eq!(s.total_bytes, 64 + 66);
-        assert!(s.header_hex.starts_with("77 61 6E 67"));
-    }
 
     #[test]
     fn empty_input_is_rejected_with_a_readable_message() {

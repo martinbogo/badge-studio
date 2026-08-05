@@ -244,9 +244,26 @@ glyphs are 8 px wide, so one glyph is exactly one byte column.
 
 ## Animation
 
-Mode 5 treats a message's bitmap as a horizontal filmstrip. Each frame is
-**48 px wide** (48, not 44, on both 44 px and 48 px displays) and 11 px tall.
-N frames become one image `N * 48` px wide. Speed sets the frame rate.
+Mode 5 treats a message's bitmap as a horizontal filmstrip. Each frame is 11 px
+tall and **as wide as the firmware advances per frame**, which is not the same
+as the display width and not the same on both firmwares:
+
+| Firmware | Frame width |
+|---|---|
+| Stock | 48 px, on both 44 px and 48 px displays |
+| badgemagic | 44 px, its own `LED_COLS` |
+
+N frames become one image `N * width` px wide. Speed sets the frame rate.
+
+Padding to the wrong one does not fail, it walks: every frame after the first
+lands further sideways than the last, which looks like a corrupt animation
+rather than a mismatched assumption. See [Telling the two apart](#firmware)
+below.
+
+At 44 the frames are not byte-aligned, because 44 does not divide by 8. An odd
+number of frames therefore does not fill a whole number of byte columns, the
+payload is rounded up, and the badge sees a sliver of a further frame. Even
+counts are exact. The stock 48 never has this problem.
 
 **A slot holds 8 animation frames, and there are 8 slots, so a full sequence is
 64 frames.** The badge cycles between slots, and each slot runs its own
@@ -257,6 +274,41 @@ and the marker swept fully between each.
 Whether a single slot can hold more than 8 frames is untested. The one attempt
 at 24 frames failed on the Bluetooth timeout rather than on size, so the
 question is open.
+
+<a id="firmware"></a>
+
+## Telling the two firmwares apart
+
+Both the stock firmware and the open
+[badgemagic](https://github.com/fossasia/badgemagic-firmware) firmware speak
+this protocol: same magic, same 16-byte writes, same mode and speed packing,
+same length arithmetic. Two things differ, and both matter to a client.
+
+**The animation frame width**, as above.
+
+**Bluetooth may want a PIN.** badgemagic has an optional four-digit code,
+displayed on the badge when it enters BT-PAIRING. It is off by default and
+stored in flash, so nothing readable from the device says in advance whether a
+given badge wants one; the badge answers by rejecting the first `wang` write
+with `ATT_ERR_UNLIKELY` (0x0E). The code is sent as four ASCII digits in bytes
+0-3 of its own 16-byte write, zero-padded, before any `wang` packet. A new code
+is generated on each entry to pairing mode and the authorisation resets on every
+disconnect. USB has no such gate on either firmware.
+
+Which firmware is running can be read off the device rather than configured:
+
+| Transport | Where | badgemagic reports |
+|---|---|---|
+| USB | descriptor strings | manufacturer `FOSSASIA WAS HERE`, product `LED Badge Magic`, serial `BM1144 fw: vX.Y.Z` |
+| Bluetooth | Device Information Service `0x180A` | manufacturer `0x2A29` = `FOSSASIA`, model `0x2A24` = `BM1144` |
+
+The stock firmware exposes no Device Information Service at all, so its absence
+is itself the answer. VID and PID are identical on both (`0x0416`/`0x5020`) and
+cannot be used.
+
+Do **not** use the advertised Bluetooth name. It lives in
+`badge_cfg.ble_devname` and the user can change it; its default merely happens
+to contain the vendor's name.
 
 ## Capacity
 

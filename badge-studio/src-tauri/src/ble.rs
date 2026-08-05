@@ -312,15 +312,3 @@ where
     }
     Ok(())
 }
-
-/// Whether a Bluetooth adapter is present and usable. Surfaces the common
-/// setup problems (adapter off, missing OS permission) before the user tries
-/// to send something.
-pub async fn adapter_status() -> Result<String, BleError> {
-    let central = adapter().await?;
-    let info = central.adapter_info().await.unwrap_or_default();
-    // Touching the peripheral list forces the platform to hand out a session,
-    // which is where a permission failure shows up first.
-    let _ = central.peripherals().await?;
-    Ok(info)
-}

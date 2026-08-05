@@ -248,10 +248,10 @@ pub fn pixels_to_bitmap(rows: &[Vec<bool>]) -> (Vec<u8>, usize) {
 pub fn frames_to_bitmap(frames: &[Vec<Vec<bool>>], stride: usize) -> (Vec<u8>, usize) {
     let mut strip: Vec<Vec<bool>> = vec![Vec::new(); BADGE_HEIGHT];
     for f in frames {
-        for row in 0..BADGE_HEIGHT {
+        for (row, out) in strip.iter_mut().enumerate() {
             let src = f.get(row);
             for x in 0..stride {
-                strip[row].push(src.and_then(|r| r.get(x)).copied().unwrap_or(false));
+                out.push(src.and_then(|r| r.get(x)).copied().unwrap_or(false));
             }
         }
     }
@@ -405,7 +405,7 @@ mod width_tests {
     #[test]
     fn display_width_frames_pack_to_the_wire_stride() {
         let narrow = vec![vec![true; BADGE_WIDTH]; BADGE_HEIGHT];
-        let (bytes, cols) = frames_to_bitmap(&vec![narrow.clone(), narrow], FRAME_WIDTH);
+        let (bytes, cols) = frames_to_bitmap(&[narrow.clone(), narrow], FRAME_WIDTH);
         assert_eq!(cols, 2 * FRAME_WIDTH / 8, "two frames at the 48px stride");
         assert_eq!(bytes.len(), cols * BADGE_HEIGHT);
 
@@ -427,8 +427,8 @@ mod width_tests {
             row.resize(FRAME_WIDTH, false);
         }
         assert_eq!(
-            frames_to_bitmap(&vec![narrow.clone(), narrow], FRAME_WIDTH),
-            frames_to_bitmap(&vec![wide.clone(), wide], FRAME_WIDTH),
+            frames_to_bitmap(&[narrow.clone(), narrow], FRAME_WIDTH),
+            frames_to_bitmap(&[wide.clone(), wide], FRAME_WIDTH),
         );
     }
 }

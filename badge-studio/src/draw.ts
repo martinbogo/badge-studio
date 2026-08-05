@@ -40,11 +40,11 @@ export function rectContains(r: Rect, p: Point): boolean {
   return p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1;
 }
 
-export function rectWidth(r: Rect): number {
+function rectWidth(r: Rect): number {
   return r.x1 - r.x0 + 1;
 }
 
-export function rectHeight(r: Rect): number {
+function rectHeight(r: Rect): number {
   return r.y1 - r.y0 + 1;
 }
 

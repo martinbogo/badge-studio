@@ -110,14 +110,6 @@ export interface BadgeInfo {
   services: string[];
 }
 
-export interface EncodeSummary {
-  total_bytes: number;
-  payload_bytes: number;
-  byte_columns: number;
-  capacity_columns: number;
-  chunks: number;
-  header_hex: string;
-}
 
 export interface TextBitmap {
   rows: boolean[][];

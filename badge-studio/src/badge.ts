@@ -32,7 +32,7 @@ import {
 } from "./types";
 
 let idCounter = 0;
-export function newId(): string {
+function newId(): string {
   return `m${Date.now().toString(36)}${(idCounter++).toString(36)}`;
 }
 
@@ -55,20 +55,7 @@ export function resizeFrame(f: Frame, width: number): Frame {
   });
 }
 
-export function isEmpty(f: Frame): boolean {
-  return f.every((row) => row.every((p) => !p));
-}
 
-/**
- * Animation frames are exactly the width of the display; other modes are free.
- *
- * The wire format steps 48 columns per frame, but the panel is 44 LEDs wide, so
- * the last four are padding that can never light up. The encoder adds them when
- * packing. Editing them would only ever waste the user's time.
- */
-export function widthForMode(mode: Mode, current: number): number {
-  return mode === "animation" ? BADGE_WIDTH : current;
-}
 
 export function newMessage(mode: Mode = "scroll_left"): Message {
   const width = BADGE_WIDTH;
@@ -605,12 +592,6 @@ export function byteColumns(m: Message, stride: number = FRAME_WIDTH): number {
   return Math.ceil((m.frames[0]?.[0]?.length ?? 0) / 8);
 }
 
-export function totalByteColumns(
-  messages: Message[],
-  stride: number = FRAME_WIDTH
-): number {
-  return messages.reduce((n, m) => n + byteColumns(m, stride), 0);
-}
 
 /** Ticks the firmware holds a fixed-mode message before advancing. */
 const FIXED_DWELL_STEPS = BADGE_WIDTH;

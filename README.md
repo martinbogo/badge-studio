@@ -39,6 +39,12 @@ better choice; the `.tar.gz` is the bare executable and expects
 Eight message slots. Each is either a single bitmap or an animation of up to
 eight frames, so a full sequence is 64 frames. The badge cycles the slots.
 
+Slots can be reordered by dragging, with Cmd/Ctrl and Shift to move several at
+once, which matters for animations because the eight slots are one sequence. A
+slot can also be switched off with the dot beside its name: it keeps its artwork
+and its place in the list and is simply left out of the upload, so the badge
+cycles the ones that remain.
+
 Each slot has its own display mode, speed and options:
 
 | | |
@@ -117,6 +123,18 @@ USB for anything approaching 64 frames.
 
 On macOS the first scan raises a system permission prompt.
 
+### Open firmware
+
+Badges running the
+[badgemagic](https://github.com/fossasia/badgemagic-firmware) firmware are
+recognised automatically over both transports and encoded to match: it advances
+44 columns per animation frame where the stock firmware advances 48, and sending
+the wrong one makes every frame land further sideways than the last.
+
+Its optional Bluetooth PIN is not supported. If a badge has that switched on,
+upload over USB, which never asks for a code, or turn it off in the badge's own
+SECURITY menu.
+
 ## Documents
 
 | Extension | Contains | Opening one |
@@ -139,6 +157,7 @@ restore that copy on the next launch.
 | `Cmd/Ctrl` + `Z` / `Shift+Z` | Undo / redo |
 | `Cmd/Ctrl` + `C` / `X` / `V` / `A` | Copy / cut / paste / select all |
 | Arrow keys | Nudge the selection, or jog the preview when nothing is selected |
+| `Alt` + `Up` / `Down` | Move the selected message slots |
 | `Delete` | Erase inside the selection |
 | `Esc` | Deselect |
 | `Space` | Play or pause the preview |
