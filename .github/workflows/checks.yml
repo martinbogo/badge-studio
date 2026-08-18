@@ -18,6 +18,10 @@ name: Checks
 on:
   push:
   pull_request:
+  # Runnable on demand. A push event went missing once and there was no way to
+  # ask for the checks again without pushing something, which is a poor reason
+  # to make a commit.
+  workflow_dispatch:
 
 jobs:
   generated-fonts-are-current:
