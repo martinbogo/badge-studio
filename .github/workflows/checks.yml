@@ -73,7 +73,11 @@ jobs:
           echo "Second run is a no-op."
 
   rust:
-    runs-on: ubuntu-latest
+    # Pinned, and pinned to the same release the Linux installers are built on.
+    # `ubuntu-latest` moved from image 20260720 to 20260810 and the apt install
+    # below began hanging with no output; a check that tests on a different
+    # distribution from the one we ship was the wrong shape anyway.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
 
@@ -94,6 +98,11 @@ jobs:
       # looking for -ludev and -lwebkit2gtk-4.1. Tried, reverted. Forty
       # seconds is not worth a build that cannot link.
       - name: Install Linux build dependencies
+        env:
+          # Without this a package that wants to ask something waits forever,
+          # which is how this step came to hang for twenty minutes printing
+          # nothing at all.
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
           sudo apt-get install -y \
