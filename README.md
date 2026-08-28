@@ -34,6 +34,25 @@ distributions. The `.deb` and `.rpm` declare their dependencies and are the
 better choice; the `.tar.gz` is the bare executable and expects
 `webkit2gtk-4.1` to be installed already.
 
+## Web client
+
+There is also a browser version in [web/](web/) that needs nothing installed.
+Two static files on any HTTPS host, and it programs the badge over USB or
+Bluetooth using the same glyphs and the same wire format as the desktop app.
+
+```bash
+cd web && python3 -m http.server 8765     # then open http://localhost:8765/
+```
+
+It is the only way to reach Android, where the desktop app does not run. It
+cannot reach iOS: Safari implements neither WebHID nor Web Bluetooth on any
+platform. The desktop app remains the better tool for large animations, which
+Bluetooth handles poorly regardless of client.
+
+See [web/README.md](web/README.md) for deploying it and for how the glyph table
+and encoder are kept in step with the Rust ones.
+
+
 ## What the badge can hold
 
 Eight message slots. Each is either a single bitmap or an animation of up to
