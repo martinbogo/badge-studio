@@ -1,0 +1,572 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Badge Studio Web</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>%F0%9F%93%9F</text></svg>">
+<style>
+  :root {
+    --bg: #f6f6f4; --fg: #1a1a18; --muted: #6b6b66; --line: #d8d8d2;
+    --card: #fff; --accent: #b4552d; --on: #ff6a2b; --off: #23231f; --bad: #b00020;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16160f; --fg:#e8e8e0; --muted:#9a9a90; --line:#33332b;
+            --card:#1e1e17; --accent:#ff8b52; --bad:#ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:1.5rem 1rem 4rem; background:var(--bg); color:var(--fg);
+         font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size:1.35rem; margin:0 0 .15rem; letter-spacing:-.01em; }
+  .sub { color:var(--muted); margin:0 0 1.25rem; font-size:.9rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:1rem; margin-bottom:1rem; }
+  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+  label { font-size:.8rem; color:var(--muted); display:block; margin-bottom:.2rem; }
+  input[type=text], select, input[type=number] {
+    font:inherit; padding:.45rem .55rem; border:1px solid var(--line); border-radius:6px;
+    background:var(--bg); color:var(--fg); }
+  input[type=text] { flex:1; min-width:14rem; }
+  button { font:inherit; padding:.5rem .9rem; border:1px solid var(--line); border-radius:6px;
+           background:var(--bg); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  canvas { image-rendering: pixelated; display:block; }
+  .viewport { background:#0b0b08; border-radius:6px; padding:6px; display:inline-block; }
+  .strip { background:#0b0b08; border-radius:6px; padding:6px; overflow-x:auto; max-width:100%; }
+  .slot { border-top:1px solid var(--line); padding-top:.85rem; margin-top:.85rem; }
+  .slot:first-of-type { border-top:0; padding-top:0; margin-top:0; }
+  .meter { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:.5rem; }
+  .meter > i { display:block; height:100%; background:var(--accent); }
+  .warn { color:var(--bad); }
+  code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:.05rem .3rem; font-size:.85em; }
+  .status { font-size:.85rem; color:var(--muted); }
+  #unsupported { display:none; }
+  pre#log { margin:0; max-height:15rem; overflow:auto; font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+            background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:.6rem; white-space:pre-wrap; }
+  pre#log .e { color:var(--bad); font-weight:600; }
+  pre#log .w { color:var(--accent); }
+  pre#log .t { color:var(--muted); }
+  .hint { font-size:.85rem; color:var(--muted); background:var(--bg); border:1px solid var(--line);
+          border-left:3px solid var(--accent); border-radius:0 6px 6px 0; padding:.55rem .7rem; margin:.7rem 0 0; }
+  progress { width:100%; height:6px; margin-top:.5rem; }
+</style>
+
+<main>
+  <h1>Badge Studio Web</h1>
+  <p class="sub">Programs a 44x11 LED name badge straight from the browser, over USB (WebHID) or Bluetooth (Web Bluetooth). Same glyphs and same wire format as the desktop app.</p>
+
+  <div class="card" id="unsupported">
+    <strong class="warn">This browser cannot talk to the badge.</strong>
+    <p class="status" id="whynot"></p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="usb" class="primary">Connect over USB</button>
+      <button id="bt">Connect over Bluetooth</button>
+      <button id="send" disabled>Send to badge</button>
+      <span class="status" id="conn">Not connected.</span>
+    </div>
+    <progress id="prog" value="0" max="1" style="display:none"></progress>
+    <p class="hint" id="bthint" style="display:none">
+      Bluetooth only: the badge stays silent while USB is plugged in.
+      <strong>Unplug it, then press the first button</strong> until the Bluetooth icon appears.
+      It leaves Bluetooth mode after every upload, so press the button again before each send.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div><label for="face">Typeface</label><select id="face"></select></div>
+      <div><label for="bright">Brightness</label>
+        <select id="bright"><option>100</option><option>75</option><option>50</option><option>25</option></select>
+      </div>
+      <div style="align-self:end"><button id="add">Add message</button></div>
+    </div>
+    <p class="status" id="notice" style="margin:.6rem 0 0"></p>
+  </div>
+
+  <div class="card" id="slots"></div>
+
+  <div class="card">
+    <label>Badge preview (44 x 11)</label>
+    <div class="viewport"><canvas id="view" width="352" height="88"></canvas></div>
+    <label style="margin-top:.9rem">Full message</label>
+    <div class="strip"><canvas id="strip" height="88"></canvas></div>
+    <div class="meter"><i id="fill"></i></div>
+    <p class="status" id="cap"></p>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <label style="margin:0">Transport log</label>
+      <div class="row" style="gap:.4rem">
+        <button id="copylog">Copy</button><button id="clearlog">Clear</button>
+      </div>
+    </div>
+    <pre id="log"></pre>
+    <p class="status">Also mirrored to the browser console, and readable as
+      <code>window.__badge.log</code> / <code>window.__badge.dump()</code>.</p>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Wire format. Mirrors badge-studio/src-tauri/src/protocol.rs; see PROTOCOL.md.
+// ---------------------------------------------------------------------------
+const ROWS = 11, FIELD = 16, BADGE_W = 44, MAX_MSGS = 8;
+const DEVICE_BUFFER = 8192, HEADER = 64;
+const MAX_BYTE_COLUMNS = (DEVICE_BUFFER - HEADER) / ROWS | 0;   // 738
+const VID = 0x0416, PID = 0x5020, REPORT = 64;
+
+const MODES = [["Scroll left",0],["Scroll right",1],["Scroll up",2],["Scroll down",3],
+               ["Fixed",4],["Animation",5],["Snowflake",6],["Picture",7],["Laser",8]];
+
+// 25% is 0x30, not 0x40. On CH582 0x40 does not dim the panel, it corrupts it:
+// the value is a level index into a table of four, so 4 reads off the end.
+const BRIGHT = { 100: 0x00, 75: 0x10, 50: 0x20, 25: 0x30 };
+
+let FONT = null;   // {rows, faces:[...]} in fallback order
+
+const ignorable = c => {
+  const p = c.codePointAt(0);
+  return p === 0x200D || p === 0xFE0E || p === 0xFE0F || (p >= 0x1F3FB && p <= 0x1F3FF);
+};
+
+const glyphOf = (face, ch) => face.glyphs[ch];
+
+// The face that will actually draw ch, and its glyph. Shared by measure and
+// layout, or the editor budgets against one width and stamps another.
+function resolve(chosen, ch) {
+  const g = glyphOf(chosen, ch);
+  if (g) return [chosen, g];
+  for (const f of FONT.faces) { const h = glyphOf(f, ch); if (h) return [f, h]; }
+  return null;
+}
+
+function advance(chosen, ch) {
+  if (ignorable(ch)) return 0;
+  const hit = resolve(chosen, ch);
+  if (hit) return hit[1][0];
+  const q = glyphOf(chosen, "?");
+  return q ? q[0] : 0;
+}
+
+const chars = s => Array.from(s);
+const measure = (chosen, text) => chars(text).reduce((n, c) => n + advance(chosen, c), 0);
+
+function layout(chosen, text) {
+  const width = measure(chosen, text);
+  const rows = Array.from({length: ROWS}, () => new Uint8Array(width));
+  const missing = [];
+  let pen = 0;
+  chars(text).forEach((ch, i) => {
+    if (ignorable(ch)) return;
+    let hit = resolve(chosen, ch), drawn, g;
+    if (hit) { [drawn, g] = hit; }
+    else {
+      if (!missing.includes(ch)) missing.push(ch);
+      g = glyphOf(chosen, "?"); drawn = chosen;
+      if (!g) return;
+    }
+    // Jitter belongs to the face doing the drawing, and is keyed on position
+    // in the string so repeated letters do not bounce in lockstep.
+    const j = drawn.jitter;
+    const dy = j.length ? j[i % j.length] : 0;
+    for (let r = 0; r < ROWS; r++) {
+      const y = r + dy;
+      if (y < 0 || y >= ROWS) continue;
+      const bits = g[1 + r];
+      for (let x = 0; x < FIELD; x++) {
+        if (bits & (1 << (FIELD - 1 - x))) {
+          const px = pen + x;
+          if (px < width) rows[y][px] = 1;
+        }
+      }
+    }
+    pen += g[0];
+  });
+  return { rows, width, missing };
+}
+
+// Column-major, 11 bytes per 8px column block, MSB = leftmost pixel.
+function pixelsToBitmap(rows, width) {
+  const cols = Math.ceil(width / 8);
+  const buf = new Uint8Array(cols * ROWS);
+  let k = 0;
+  for (let col = 0; col < cols; col++) {
+    for (let r = 0; r < ROWS; r++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const x = col * 8 + bit;
+        if (x < width && rows[r][x]) byte |= 1 << (7 - bit);
+      }
+      buf[k++] = byte;
+    }
+  }
+  return { bitmap: buf, columns: cols };
+}
+
+function pack(msgs, brightness) {
+  if (!msgs.length) throw new Error("need at least one message");
+  if (msgs.length > MAX_MSGS) throw new Error(`at most ${MAX_MSGS} messages`);
+  const total = msgs.reduce((n, m) => n + m.columns, 0);
+  if (total > MAX_BYTE_COLUMNS)
+    throw new Error(`payload is ${total} byte columns (${total*8}px), device holds ${MAX_BYTE_COLUMNS} (${MAX_BYTE_COLUMNS*8}px)`);
+
+  const out = new Uint8Array(HEADER + total * ROWS);
+  out[0]=0x77; out[1]=0x61; out[2]=0x6e; out[3]=0x67;      // "wang"
+  out[5] = BRIGHT[brightness];
+  msgs.forEach((m, i) => {
+    out[6] |= (m.blink ? 1 : 0) << i;
+    out[7] |= (m.ants  ? 1 : 0) << i;
+    out[8 + i] = ((m.speed - 1) << 4) | m.mode;
+    out[16 + 2*i] = (m.columns >> 8) & 0xFF;
+    out[17 + 2*i] = m.columns & 0xFF;
+  });
+  const t = new Date();
+  out[38]=t.getFullYear()%100; out[39]=t.getMonth()+1; out[40]=t.getDate();
+  out[41]=t.getHours(); out[42]=t.getMinutes(); out[43]=t.getSeconds();
+  let off = HEADER;
+  for (const m of msgs) { out.set(m.bitmap, off); off += m.bitmap.length; }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Debug log. Transport failures here are mostly invisible ones (a badge that
+// stopped advertising, a chunk that is never acknowledged), so the log is a
+// first-class part of the UI rather than a console afterthought.
+// ---------------------------------------------------------------------------
+const LOG = [];
+function log(level, msg, detail) {
+  const t = new Date().toISOString().slice(11, 23);
+  const rec = { t, level, msg, detail };
+  LOG.push(rec);
+  const el = document.getElementById("log");
+  if (el) {
+    const cls = level === "error" ? "e" : level === "warn" ? "w" : "";
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="t">${t}</span> <span class="${cls}">${msg}</span>` +
+      (detail ? ` <span class="t">${String(detail).replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;")}</span>` : "");
+    el.append(line); el.scrollTop = el.scrollHeight;
+  }
+  (level === "error" ? console.error : level === "warn" ? console.warn : console.log)
+    ("[badge]", msg, detail ?? "");
+  return rec;
+}
+const errText = e => `${e.name || "Error"}: ${e.message}${e.stack ? "\n" + e.stack.split("\n").slice(0,3).join("\n") : ""}`;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ---------------------------------------------------------------------------
+// Transports.
+//
+// USB HID: 64-byte output reports, no report ID, zero-padded to a multiple of
+// 64 because Report Count is fixed, so a short final report is malformed
+// rather than partial. WebHID's leading report-ID argument is a literal 0.
+//
+// BLE: writes must be 16 bytes. Anything larger is not rejected, it is simply
+// never acknowledged, so an oversized write hangs forever with no feedback.
+// Write-with-response, sequential, no inter-chunk delay needed. The badge
+// latches the upload when the link drops, so disconnect after the last write.
+// ---------------------------------------------------------------------------
+const BLE_SERVICE = 0xfee0, BLE_CHAR = 0xfee1, BLE_CHUNK = 16;
+let link = null;   // { kind, label, send(bytes, onProgress) -> writes }
+
+function usbLink(d) {
+  return {
+    kind: "usb",
+    label: `USB: ${d.productName || "badge"}`,
+    async send(bytes, onProgress) {
+      const padded = new Uint8Array(Math.ceil(bytes.length / REPORT) * REPORT);
+      padded.set(bytes);
+      const total = padded.length / REPORT;
+      log("info", `USB: sending ${bytes.length} bytes as ${total} reports`);
+      for (let i = 0, n = 0; i < padded.length; i += REPORT, n++) {
+        await d.sendReport(0, padded.subarray(i, i + REPORT));
+        onProgress((n + 1) / total);
+      }
+      return total;
+    },
+  };
+}
+
+async function connectUsb() {
+  log("info", "USB: requesting device", `VID 0x${VID.toString(16)} PID 0x${PID.toString(16)}`);
+  const [d] = await navigator.hid.requestDevice({ filters: [{ vendorId: VID, productId: PID }] });
+  if (!d) { log("warn", "USB: picker dismissed, no device chosen"); return; }
+  if (!d.opened) await d.open();
+  log("info", "USB: opened", `${d.productName || "badge"} (${d.collections?.length ?? 0} collections)`);
+  link = usbLink(d);
+}
+
+async function connectBle() {
+  log("info", "BLE: requesting device", `service 0x${BLE_SERVICE.toString(16)}`);
+  const d = await navigator.bluetooth.requestDevice({ filters: [{ services: [BLE_SERVICE] }] });
+  log("info", "BLE: chosen", d.name || "(unnamed)");
+  const gatt = await d.gatt.connect();
+  log("info", "BLE: GATT connected");
+  const svc = await gatt.getPrimaryService(BLE_SERVICE);
+  const ch = await svc.getCharacteristic(BLE_CHAR);
+  log("info", "BLE: characteristic 0xFEE1 acquired",
+      Object.entries(ch.properties).filter(([, v]) => v).map(([k]) => k).join(","));
+  d.addEventListener("gattserverdisconnected", () => {
+    log("warn", "BLE: disconnected");
+    if (link && link.kind === "ble") { link = null; paint(); }
+  });
+  link = {
+    kind: "ble",
+    label: `Bluetooth: ${d.name || "badge"}`,
+    async send(bytes, onProgress) {
+      const total = Math.ceil(bytes.length / BLE_CHUNK);
+      log("info", `BLE: sending ${bytes.length} bytes as ${total} writes of ${BLE_CHUNK}`);
+      for (let i = 0, n = 0; i < bytes.length; i += BLE_CHUNK, n++) {
+        const chunk = bytes.subarray(i, Math.min(i + BLE_CHUNK, bytes.length));
+        let err = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try { await ch.writeValueWithResponse(chunk); err = null; break; }
+          catch (e) {
+            err = e;
+            log("warn", `BLE: write ${n + 1}/${total} attempt ${attempt} failed`, errText(e));
+            await sleep(60);
+          }
+        }
+        if (err) {
+          throw new Error(`write ${n + 1} of ${total} failed after 3 attempts. ` +
+            `The badge leaves Bluetooth mode after a few minutes and stops acknowledging ` +
+            `writes rather than refusing them. Press the first button and send again from ` +
+            `the start; a part-written buffer cannot be resumed. (${err.message})`);
+        }
+        onProgress((n + 1) / total);
+      }
+      // The badge latches the upload when the link drops.
+      log("info", "BLE: disconnecting to latch the upload");
+      d.gatt.disconnect();
+      return total;
+    },
+  };
+}
+
+window.__badge = {
+  log: LOG,
+  get link() { return link && { kind: link.kind, label: link.label }; },
+  dump: () => LOG.map(r => `${r.t} [${r.level}] ${r.msg}${r.detail ? " | " + r.detail : ""}`).join("\n"),
+  // Encode without sending, so a transport bug can be told apart from an
+  // encoder bug without a badge present.
+  encode: () => { const m = readSlots(); return { messages: m.length,
+    bytes: Array.from(pack(m, +document.querySelector("#bright").value)) }; },
+};
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const slots = [];
+
+function addSlot(text = "") {
+  if (slots.length >= MAX_MSGS) return;
+  const i = slots.length;
+  const el = document.createElement("div");
+  el.className = "slot";
+  el.innerHTML = `
+    <div class="row">
+      <div style="flex:1;min-width:14rem"><label>Message ${i+1}</label>
+        <input type="text" class="t" value="${text.replace(/"/g,"&quot;")}" placeholder="Type here"></div>
+      <div><label>Mode</label><select class="m">${
+        MODES.map(([n,v])=>`<option value="${v}">${n}</option>`).join("")}</select></div>
+      <div><label>Speed</label><select class="s">${
+        [1,2,3,4,5,6,7,8].map(v=>`<option${v===5?" selected":""}>${v}</option>`).join("")}</select></div>
+      <div><label>Effects</label><div class="row" style="gap:.5rem">
+        <label style="margin:0"><input type="checkbox" class="b"> blink</label>
+        <label style="margin:0"><input type="checkbox" class="a"> border</label>
+      </div></div>
+      <div style="align-self:end"><button class="rm" title="Remove">Remove</button></div>
+    </div>`;
+  $("#slots").append(el);
+  slots.push(el);
+  el.querySelectorAll("input,select").forEach(n => n.addEventListener("input", paint));
+  el.querySelector(".rm").addEventListener("click", () => {
+    el.remove(); slots.splice(slots.indexOf(el), 1); relabel(); paint();
+  });
+  relabel();
+  paint();
+}
+
+const relabel = () => slots.forEach((el, n) =>
+  el.querySelector("label").textContent = `Message ${n+1}`);
+
+function readSlots() {
+  const face = FONT.faces.find(f => f.id === $("#face").value);
+  return slots.map(el => {
+    const text = el.querySelector(".t").value;
+    const lay = layout(face, text);
+    const { bitmap, columns } = pixelsToBitmap(lay.rows, lay.width);
+    return {
+      text, lay, bitmap, columns,
+      mode: +el.querySelector(".m").value,
+      speed: +el.querySelector(".s").value,
+      blink: el.querySelector(".b").checked,
+      ants: el.querySelector(".a").checked,
+    };
+  }).filter(m => m.text.length);
+}
+
+function drawGrid(ctx, rows, w, h, scale, ox = 0) {
+  ctx.fillStyle = "#0b0b08";
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  for (let r = 0; r < ROWS; r++) {
+    for (let x = 0; x < w; x++) {
+      const sx = x + ox;
+      const on = sx >= 0 && sx < rows[r].length && rows[r][sx];
+      ctx.fillStyle = on ? "#ff6a2b" : "#23231f";
+      ctx.fillRect(x*scale+1, r*scale+1, scale-2, scale-2);
+    }
+  }
+}
+
+let phase = 0, sending = false;
+function paint() {
+  if (!FONT) return;
+  const msgs = readSlots();
+  const total = msgs.reduce((n, m) => n + m.columns, 0);
+  const missing = [...new Set(msgs.flatMap(m => m.lay.missing))];
+
+  $("#cap").innerHTML =
+    `${total} of ${MAX_BYTE_COLUMNS} byte columns (${total*8} of ${MAX_BYTE_COLUMNS*8} px)` +
+    (total > MAX_BYTE_COLUMNS ? ` <span class="warn">over capacity</span>` : "") +
+    (missing.length ? ` <span class="warn">no glyph for ${missing.map(c=>`"${c}"`).join(", ")}</span>` : "");
+  $("#fill").style.width = Math.min(100, total / MAX_BYTE_COLUMNS * 100) + "%";
+
+  const first = msgs[0];
+  const strip = $("#strip"), sctx = strip.getContext("2d");
+  if (first) {
+    strip.width = Math.max(1, first.lay.width) * 8;
+    drawGrid(sctx, first.lay.rows, first.lay.width, ROWS, 8);
+  } else { strip.width = 8; sctx.clearRect(0,0,strip.width,strip.height); }
+
+  const view = $("#view"), vctx = view.getContext("2d");
+  if (first) {
+    const scroll = first.mode === 0 || first.mode === 1;
+    const span = first.lay.width + BADGE_W;
+    let ox = 0;
+    if (scroll) {
+      const p = Math.floor(phase) % span;
+      ox = first.mode === 0 ? p - BADGE_W : (span - p) - BADGE_W;
+    }
+    const blinkOff = first.blink && Math.floor(phase / 8) % 2 === 1;
+    drawGrid(vctx, blinkOff ? Array.from({length:ROWS},()=>new Uint8Array(0)) : first.lay.rows,
+             BADGE_W, ROWS, 8, ox);
+    if (first.ants) {
+      // The badge draws its own border; this is an indication, not a render.
+      vctx.fillStyle = "#ff6a2b";
+      const m = Math.floor(phase) % 4;
+      for (let x = 0; x < BADGE_W; x++) if ((x + m) % 4 < 2) {
+        vctx.fillRect(x*8+1, 1, 6, 6); vctx.fillRect(x*8+1, (ROWS-1)*8+1, 6, 6);
+      }
+      for (let y = 0; y < ROWS; y++) if ((y + m) % 4 < 2) {
+        vctx.fillRect(1, y*8+1, 6, 6); vctx.fillRect((BADGE_W-1)*8+1, y*8+1, 6, 6);
+      }
+    }
+  } else {
+    drawGrid(vctx, Array.from({length:ROWS},()=>new Uint8Array(0)), BADGE_W, ROWS, 8);
+  }
+
+  if (!sending) $("#conn").textContent = link ? link.label : "Not connected.";
+  $("#bthint").style.display = (!link || link.kind === "ble") ? "block" : "none";
+  $("#send").disabled = sending || !link || !msgs.length || total > MAX_BYTE_COLUMNS;
+}
+
+function tick() { phase += 0.5; paint(); requestAnimationFrame(tick); }
+
+async function boot() {
+  const hasHid = "hid" in navigator, hasBle = "bluetooth" in navigator;
+  if (!hasHid) $("#usb").disabled = true;
+  if (!hasBle) $("#bt").disabled = true;
+  if (!hasHid && !hasBle) {
+    $("#unsupported").style.display = "block";
+    const ua = navigator.userAgent;
+    $("#whynot").textContent = /iPhone|iPad|iPod/.test(ua)
+      ? "Safari on iOS and iPadOS has neither WebHID nor Web Bluetooth, and no flag enables them. iOS needs a native app."
+      : "This browser has neither WebHID nor Web Bluetooth. Use Chrome, Edge or Opera. Firefox and Safari implement neither.";
+  } else if (!hasHid) {
+    // The Android case: Web Bluetooth is there, WebHID is compiled out.
+    log("warn", "WebHID unavailable, Bluetooth only",
+        /Android/.test(navigator.userAgent)
+          ? "mobile Chromium disables WebHID, so navigator.hid is undefined on Android"
+          : "navigator.hid missing");
+  }
+  if (!isSecureContext) log("error", "Not a secure context", "WebHID and Web Bluetooth need HTTPS or localhost");
+
+  FONT = await (await fetch("./fonts.json")).json();
+  log("info", `fonts loaded: ${FONT.faces.length} faces, ` +
+      `${FONT.faces.reduce((n,f)=>n+Object.keys(f.glyphs).length,0)} glyphs`);
+
+  const sel = $("#face");
+  FONT.faces.filter(f => f.pickable).forEach(f => {
+    const o = document.createElement("option");
+    o.value = f.id; o.textContent = f.name; sel.append(o);
+  });
+  sel.addEventListener("change", () => {
+    $("#notice").textContent = FONT.faces.find(x => x.id === sel.value).notice || "";
+    paint();
+  });
+  $("#bright").addEventListener("change", paint);
+  $("#add").addEventListener("click", () => addSlot());
+  $("#clearlog").addEventListener("click", () => { LOG.length = 0; $("#log").textContent = ""; });
+  $("#copylog").addEventListener("click", () =>
+    navigator.clipboard.writeText(window.__badge.dump()).then(
+      () => log("info", "log copied to clipboard"),
+      e => log("error", "clipboard write failed", errText(e))));
+
+  const wire = (id, fn, what) => $(id).addEventListener("click", async () => {
+    try { await fn(); }
+    catch (e) {
+      // A dismissed picker is a NotFoundError and is not a fault.
+      if (e.name === "NotFoundError") log("warn", `${what}: cancelled`, e.message);
+      else log("error", `${what}: connect failed`, errText(e));
+    }
+    paint();
+  });
+  wire("#usb", connectUsb, "USB");
+  wire("#bt", connectBle, "Bluetooth");
+
+  $("#send").addEventListener("click", async () => {
+    sending = true;
+    const prog = $("#prog");
+    prog.style.display = "block"; prog.value = 0;
+    $("#conn").textContent = "Sending...";
+    paint();
+    const t0 = performance.now();
+    try {
+      const bytes = pack(readSlots(), +$("#bright").value);
+      const n = await link.send(bytes, f => { prog.value = f; });
+      const ms = Math.round(performance.now() - t0);
+      log("info", `sent ${n} writes in ${ms}ms`);
+      // No checksum, no read-back, nothing ever comes back from the badge on
+      // either transport. Accepted by the link is not parsed by the badge.
+      $("#conn").innerHTML = `Sent ${n} writes in ${ms}ms. <span class="status">Check the display; delivery is unverifiable.</span>`;
+    } catch (e) {
+      log("error", "send failed", errText(e));
+      $("#conn").innerHTML = `<span class="warn">Send failed. See the transport log.</span>`;
+    } finally {
+      sending = false; prog.style.display = "none"; paint();
+    }
+  });
+
+  // Reconnect silently to a USB badge the user has already granted.
+  if (hasHid) {
+    const d = (await navigator.hid.getDevices())
+      .find(x => x.vendorId === VID && x.productId === PID);
+    if (d) {
+      if (!d.opened) await d.open();
+      log("info", "USB: reusing previously granted device", d.productName || "badge");
+      link = usbLink(d);
+    }
+  }
+
+  $("#notice").textContent = FONT.faces.find(f => f.pickable).notice || "";
+  addSlot("HELLO");
+  tick();
+}
+boot();
+</script>

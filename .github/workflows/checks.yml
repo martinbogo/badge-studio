@@ -40,6 +40,9 @@ jobs:
           # order would compile the previous derivation.
           python3 fonts/derive.py serif sans cartoon future
           python3 fonts/build.py
+          # Same sources again for the web client, so the browser and the
+          # desktop app cannot disagree about what a glyph looks like.
+          python3 fonts/webfont.py
 
       - name: Nothing should have changed
         run: |
@@ -48,7 +51,7 @@ jobs:
             exit 0
           fi
           echo "::error::Generated font files are out of date. Run:"
-          echo "::error::  python3 fonts/derive.py serif sans cartoon future && python3 fonts/build.py"
+          echo "::error::  python3 fonts/derive.py serif sans cartoon future && python3 fonts/build.py && python3 fonts/webfont.py"
           echo
           # Names first, since a regenerated glyph table is thousands of lines
           # of hex and the useful signal is which faces moved.
