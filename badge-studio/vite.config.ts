@@ -13,6 +13,12 @@ const target = process.env.BADGE_TARGET === "web" ? "web" : "tauri";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  // Relative, so the browser build works from a subdirectory. Vite's default
+  // emits root-absolute asset paths, which 404 for anyone not hosting at the
+  // domain root. The desktop build is always served from the root of its own
+  // webview, so it keeps the default.
+  base: target === "web" ? "./" : "/",
+
   plugins: [react()],
 
   resolve: {
