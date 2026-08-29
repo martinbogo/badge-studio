@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { platform } from "./platform";
 import PixelCanvas from "./components/PixelCanvas";
 import { ToolOptions, ToolPalette } from "./components/ToolPalette";
 import Timeline from "./components/Timeline";
@@ -22,8 +22,6 @@ import TransportBar from "./components/TransportBar";
 import PlaybackBar from "./components/PlaybackBar";
 import EmojiPalette from "./components/EmojiPalette";
 import SlotList from "./components/SlotList";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import Modal from "./components/Modal";
 import {
   previewPeriod,
@@ -82,9 +80,9 @@ import {
   type Message,
   type Mode,
   type Project,
-  type TextBitmap,
   type Tool,
 } from "./types";
+import { WebMenuBar } from "./components/WebMenuBar";
 import "./App.css";
 
 const MAX_FRAMES = ANIMATION_MAX_FRAMES;
@@ -295,10 +293,7 @@ export default function App() {
   const insertText = useCallback(async () => {
     if (!textInput || !active) return;
     try {
-      const bmp = await invoke<TextBitmap>("render_text", {
-        text: textInput,
-        face: faceId,
-      });
+      const bmp = await platform.renderText(textInput, faceId);
       setTextWarning(
         bmp.missing.length
           ? `No glyph for ${bmp.missing.join(" ")}, replaced with "?"`
@@ -548,13 +543,13 @@ export default function App() {
     async (path: string, p: Project) => {
       const json = serializeProject(p);
       try {
-        await invoke("write_text", { path, contents: json, kind: "project" });
+        await platform.writeText(path, json, "project");
         setDocPath(path);
         setSavedJson(json);
         // The autosave exists to survive a crash. Once the work is on disk for
         // real there is nothing left to recover, and a stale one would prompt
         // on next launch for no reason.
-        await invoke("recovery_clear").catch(() => {});
+        await platform.recoveryClear().catch(() => {});
         setTextWarning(`Saved to ${path}`);
         return true;
       } catch (e) {
@@ -568,10 +563,7 @@ export default function App() {
   const saveProjectAs = useCallback(async () => {
     const suggested = `${safeFileName(baseName(docPath) ?? "Untitled", "Untitled")}.${PROJECT_EXT}`;
     try {
-      const path = await invoke<string | null>("pick_save", {
-        kind: "project",
-        suggested,
-      });
+      const path = await platform.pickSave("project", suggested);
       if (!path) return false;
       return await writeTo(path, project);
     } catch (e) {
@@ -589,7 +581,7 @@ export default function App() {
   const loadProjectFrom = useCallback(
     async (path: string) => {
       try {
-        const text = await invoke<string>("read_text", { path, kind: "project" });
+        const text = await platform.readText(path, "project");
         adopt(parseProject(text), path);
       } catch (e) {
         setTextWarning(e instanceof DocError ? e.message : `Could not open that project: ${e}`);
@@ -600,9 +592,7 @@ export default function App() {
 
   const openProject = useCallback(async () => {
     try {
-      const picked = await invoke<{ path: string; text: string } | null>("pick_open", {
-        kind: "project",
-      });
+      const picked = await platform.pickOpen("project");
       if (!picked) return;
       adopt(parseProject(picked.text), picked.path);
     } catch (e) {
@@ -620,16 +610,9 @@ export default function App() {
     if (!active) return;
     const suggested = `${safeFileName(active.name, "message")}.${MESSAGE_EXT}`;
     try {
-      const path = await invoke<string | null>("pick_save", {
-        kind: "message",
-        suggested,
-      });
+      const path = await platform.pickSave("message", suggested);
       if (!path) return;
-      await invoke("write_text", {
-        path,
-        contents: serializeMessage(active),
-        kind: "message",
-      });
+      await platform.writeText(path, serializeMessage(active), "message");
       setTextWarning(`Exported ${active.name} to ${path}`);
     } catch (e) {
       setTextWarning(String(e));
@@ -661,9 +644,7 @@ export default function App() {
 
   const importMessage = useCallback(async () => {
     try {
-      const picked = await invoke<{ path: string; text: string } | null>("pick_open", {
-        kind: "message",
-      });
+      const picked = await platform.pickOpen("message");
       if (!picked) return;
       importMessageFrom(picked.text, picked.path);
     } catch (e) {
@@ -750,8 +731,8 @@ export default function App() {
 
   /** Shut down for real. Clearing the autosave is what marks the exit clean. */
   const leave = useCallback(async () => {
-    await invoke("recovery_clear").catch(() => {});
-    await invoke("confirm_exit").catch(() => {});
+    await platform.recoveryClear().catch(() => {});
+    await platform.confirmExit().catch(() => {});
   }, []);
 
   /** Open a path, choosing project or message by its extension. */
@@ -759,7 +740,7 @@ export default function App() {
     async (path: string) => {
       if (path.toLowerCase().endsWith(`.${MESSAGE_EXT}`)) {
         try {
-          const text = await invoke<string>("read_text", { path, kind: "message" });
+          const text = await platform.readText(path, "message");
           importMessageFrom(text, path);
         } catch (e) {
           setTextWarning(String(e));
@@ -775,9 +756,7 @@ export default function App() {
   // and whether it has been saved.
   useEffect(() => {
     const name = baseName(docPath) ?? "Untitled";
-    getCurrentWindow()
-      .setTitle(`${dirty ? "• " : ""}${name} - Badge Studio`)
-      .catch(() => {});
+    platform.setTitle(`${dirty ? "• " : ""}${name} - Badge Studio`);
   }, [docPath, dirty]);
 
   // Autosave the working copy for crash recovery. Never writes to the user's
@@ -786,11 +765,9 @@ export default function App() {
   useEffect(() => {
     if (!dirty) return;
     const t = setTimeout(() => {
-      invoke("recovery_write", {
-        json: currentJson,
-        path: docPath,
-        savedAt: new Date().toISOString(),
-      }).catch(() => {});
+      platform
+        .recoveryWrite(currentJson, docPath, new Date().toISOString())
+        .catch(() => {});
     }, AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [currentJson, dirty, docPath]);
@@ -801,7 +778,7 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const pending = await invoke<string[]>("take_pending_files");
+        const pending = await platform.takePendingFiles();
         if (pending.length) {
           if (alive) await openPath(pending[0]);
           return;
@@ -810,11 +787,7 @@ export default function App() {
         // fall through to recovery
       }
       try {
-        const rec = await invoke<{
-          json: string;
-          path: string | null;
-          saved_at: string;
-        } | null>("recovery_read");
+        const rec = await platform.recoveryRead();
         if (rec && alive) {
           setAsk({
             kind: "recover",
@@ -837,8 +810,7 @@ export default function App() {
   // Files opened from the OS while already running: double-click, "Open With",
   // or dropping onto the dock icon.
   useEffect(() => {
-    const un = listen<string>("open-file", (e) => {
-      const path = e.payload;
+    return platform.onOpenFile((path) => {
       if (path.toLowerCase().endsWith(`.${MESSAGE_EXT}`)) {
         // Importing adds to the document rather than replacing it, so there is
         // nothing to lose and nothing to confirm.
@@ -847,16 +819,12 @@ export default function App() {
         guard("open another project", () => void openPath(path));
       }
     });
-    return () => {
-      un.then((f) => f());
-    };
   }, [openPath, guard]);
 
   // Menu items act here rather than in Rust, because only this side knows
   // whether the document is dirty and therefore whether to ask first.
   useEffect(() => {
-    const un = listen<string>("menu", (e) => {
-      const id = e.payload;
+    return platform.onMenu((id) => {
       if (id.startsWith("open-recent:")) {
         const path = id.slice("open-recent:".length);
         if (path.toLowerCase().endsWith(`.${MESSAGE_EXT}`)) void openPath(path);
@@ -883,7 +851,7 @@ export default function App() {
           void exportMessage();
           break;
         case "clear-recent":
-          void invoke("recent_clear");
+          void platform.recentClear();
           break;
         case "quit-app":
           if (dirty) setAsk({ kind: "quit" });
@@ -891,9 +859,6 @@ export default function App() {
           break;
       }
     });
-    return () => {
-      un.then((f) => f());
-    };
   }, [
     guard,
     newProject,
@@ -907,31 +872,18 @@ export default function App() {
     leave,
   ]);
 
-  // Closing the window is the last chance to lose work, so it gets the same
-  // guard as New and Open. Tauri will close regardless unless we prevent it.
-  useEffect(() => {
-    const w = getCurrentWindow();
-    const un = w.onCloseRequested((e) => {
-      e.preventDefault();
+  // Closing is the last chance to lose work, so it gets the same guard as New
+  // and Open. The host holds the exit until we answer, where it can.
+  useEffect(() =>
+    platform.onExitRequested(() => {
       if (dirty) setAsk({ kind: "quit" });
       else void leave();
-    });
-    // Quit from the menu or Cmd+Q never reaches the window's close handler,
-    // and Rust holds the exit until we answer.
-    const unq = listen("quit-requested", () => {
-      if (dirty) setAsk({ kind: "quit" });
-      else void leave();
-    });
-    return () => {
-      un.then((f) => f());
-      unq.then((f) => f());
-    };
-  }, [dirty, leave]);
+    }), [dirty, leave]);
 
   const importImageFile = useCallback(async () => {
     if (!active) return;
     try {
-      const dataUrl = await invoke<string | null>("pick_image");
+      const dataUrl = await platform.pickImage();
       if (!dataUrl) return;
       const asFrames = active.mode === "animation";
       const res = await importImage(dataUrl, { threshold, asFrames });
@@ -1013,6 +965,8 @@ export default function App() {
           <span className="dot" />
           Badge Studio
         </div>
+        {/* The desktop has the operating system's menu; the browser has none. */}
+        {platform.kind === "web" && <WebMenuBar />}
         <div className="topbar-controls">
           <label title="Your badge's LED colour. Rendering only, never sent to the badge.">
             <span
@@ -1574,7 +1528,7 @@ export default function App() {
                       : String(e)
                   );
                 }
-                void invoke("recovery_clear").catch(() => {});
+                void platform.recoveryClear().catch(() => {});
                 setAsk(null);
               },
             },
@@ -1582,7 +1536,7 @@ export default function App() {
               label: "Discard",
               danger: true,
               onSelect: () => {
-                void invoke("recovery_clear").catch(() => {});
+                void platform.recoveryClear().catch(() => {});
                 setAsk(null);
               },
             },

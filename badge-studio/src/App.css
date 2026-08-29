@@ -1184,3 +1184,29 @@ button.active {
   /* Drawn at whole-pixel scale; smoothing would blur an 11px sprite into mush. */
   image-rendering: pixelated;
 }
+
+/* --- in-page menu, browser build only ------------------------------------ */
+/* The desktop takes its menu from the operating system. This stands in, and
+   raises the same action ids so the handler above it is shared. */
+.web-menubar { display: flex; gap: 0.15rem; margin-left: 0.75rem; }
+.web-menu { position: relative; }
+.web-menu-title {
+  background: none; border: 0; color: inherit; font: inherit;
+  padding: 0.3rem 0.6rem; border-radius: 5px; cursor: pointer;
+}
+.web-menu-title:hover, .web-menu-title.open { background: rgba(127, 127, 127, 0.18); }
+.web-menu-items {
+  position: absolute; top: calc(100% + 3px); left: 0; z-index: 40;
+  min-width: 13rem; padding: 0.25rem;
+  background: var(--panel, #1c1c1c); color: inherit;
+  border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.web-menu-items button {
+  display: flex; justify-content: space-between; align-items: center; gap: 1.5rem;
+  width: 100%; background: none; border: 0; color: inherit; font: inherit;
+  text-align: left; padding: 0.35rem 0.5rem; border-radius: 4px; cursor: pointer;
+}
+.web-menu-items button:hover { background: rgba(127, 127, 127, 0.2); }
+.web-menu-items kbd { opacity: 0.55; font-size: 0.8em; }
+.web-menu-items hr { border: 0; border-top: 1px solid rgba(127, 127, 127, 0.3); margin: 0.25rem 0; }

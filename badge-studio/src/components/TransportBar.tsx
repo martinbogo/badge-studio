@@ -13,8 +13,8 @@
 // limitations under the License.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { platform } from "../platform";
+import type { Firmware, Progress, UsbInfo } from "../platform";
 import { byteColumns, enabledMessages } from "../badge";
 import {
   FRAME_WIDTH,
@@ -30,21 +30,6 @@ interface Props {
   onBrightness: (b: Brightness) => void;
 }
 
-interface Progress {
-  chunk: number;
-  total: number;
-}
-
-/** Matches Rust's `Firmware`, serialised kebab-case. */
-type Firmware = "stock" | "badge-magic";
-
-interface UsbInfo {
-  manufacturer: string | null;
-  product: string | null;
-  serial: string | null;
-  /** Read off the USB descriptors, not configured. */
-  firmware: Firmware;
-}
 
 const FIRMWARE_LABEL: Record<Firmware, string> = {
   stock: "stock firmware",
@@ -53,9 +38,6 @@ const FIRMWARE_LABEL: Record<Firmware, string> = {
 
 /** The largest upload confirmed to transfer, as bytes rather than columns. */
 const BUDGET_BYTES = 64 + KNOWN_GOOD_COLUMNS * 11;
-
-/** Rust pushes this whenever the badge is plugged in or unplugged. */
-const USB_PRESENCE = "usb-presence";
 
 function toSpec(m: Message) {
   return {
@@ -101,37 +83,35 @@ export default function TransportBar({
   const [usb, setUsb] = useState<UsbInfo | null>(null);
 
   useEffect(() => {
-    const un = listen<Progress>("send-progress", (e) => {
-      setProgress(e.payload);
+    return platform.onSendProgress((p) => {
+      setProgress(p);
       if (startedAt.current) {
         const secs = (Date.now() - startedAt.current) / 1000;
-        if (secs > 0.5) setRate(e.payload.chunk / secs);
+        if (secs > 0.5) setRate(p.chunk / secs);
       }
     });
-    return () => {
-      un.then((f) => f());
-    };
   }, []);
 
   const sending = busy === "send";
 
   // USB is the better path when it is there, so watch for the cable rather than
-  // making the user tell us. Rust pushes plug and unplug events from the OS, so
-  // this is immediate rather than up to a poll interval late. The invoke is
-  // only a backstop for the window before the watcher's first emit lands.
+  // making the user tell us. The desktop gets plug and unplug events from the
+  // OS; the browser gets them for a device the user has already granted. The
+  // lookup is a backstop for the window before the first event lands.
   useEffect(() => {
     let alive = true;
-    const un = listen<UsbInfo | null>(USB_PRESENCE, (e) => {
-      if (alive) setUsb(e.payload);
+    const un = platform.onUsbPresence((info) => {
+      if (alive) setUsb(info);
     });
-    invoke<UsbInfo | null>("usb_find")
+    platform
+      .usbFind()
       .then((found) => {
         if (alive) setUsb(found);
       })
       .catch(() => {});
     return () => {
       alive = false;
-      un.then((f) => f());
+      un();
     };
   }, []);
 
@@ -147,12 +127,33 @@ export default function TransportBar({
   const pct = Math.min(100, Math.round((used / KNOWN_GOOD_COLUMNS) * 100));
 
   const scan = useCallback(async (): Promise<BadgeInfo[]> => {
-    const found = await invoke<BadgeInfo[]>("ble_scan", { timeoutMs: 6000 });
+    const found = await platform.bleScan(6000);
     setBadges(found);
     if (found.length) {
       setSelected((s) => (found.some((b) => b.id === s) ? s : found[0].id));
     }
     return found;
+  }, []);
+
+  /**
+   * Grant a badge over USB.
+   *
+   * Only the browser build offers this: it cannot see a device until the user
+   * picks it from the browser's own chooser, and that chooser opens only from
+   * a click. The desktop is told by the OS and never shows the button.
+   */
+  const onConnectUsb = useCallback(async () => {
+    setError(null);
+    try {
+      const info = await platform.requestUsb!();
+      if (info) {
+        setUsb(info);
+        setStatus(`Connected over USB, running the ${FIRMWARE_LABEL[info.firmware]}.`);
+      }
+    } catch (e) {
+      const err = e as { message?: string };
+      setError(err?.message ?? String(e));
+    }
   }, []);
 
   const onScan = useCallback(async () => {
@@ -202,10 +203,7 @@ export default function TransportBar({
         startedAt.current = Date.now();
         setRate(null);
         try {
-          const sent = await invoke<number>("send_to_badge_usb", {
-            messages: live.map(toSpec),
-            brightness,
-          });
+          const sent = await platform.sendUsb(live.map(toSpec), brightness);
           setStatus(`Sent ${sent} bytes over USB.`);
         } catch (e) {
           const err = e as { message?: string };
@@ -241,11 +239,7 @@ export default function TransportBar({
       startedAt.current = Date.now();
       setRate(null);
       try {
-        const sent = await invoke<number>("send_to_badge", {
-          messages: live.map(toSpec),
-          brightness,
-          deviceId: target,
-        });
+        const sent = await platform.sendBle(live.map(toSpec), brightness, target);
         setStatus(
           `Sent ${sent} bytes. The badge leaves Bluetooth mode after an upload, ` +
             `so press the first button again before sending anything else.`
@@ -326,9 +320,16 @@ export default function TransportBar({
               USB{usb.firmware === "badge-magic" ? " \u00b7 badgemagic" : ""}
             </span>
           ) : (
-            <button onClick={onScan} disabled={busy !== null}>
-              {busy === "scan" ? "Scanning..." : "Scan"}
-            </button>
+            <>
+              {platform.requestUsb && (
+                <button onClick={onConnectUsb} disabled={busy !== null}>
+                  Connect USB
+                </button>
+              )}
+              <button onClick={onScan} disabled={busy !== null}>
+                {busy === "scan" ? "Scanning..." : "Scan"}
+              </button>
+            </>
           )}
           {!usb && badges.length > 0 && (
             <select

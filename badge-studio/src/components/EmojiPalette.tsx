@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { platform } from "../platform";
 import { measureText } from "../font";
 import { ledPalette } from "../led";
 import { BADGE_HEIGHT, type LedColor, type TextBitmap } from "../types";
@@ -47,7 +47,8 @@ export default function EmojiPalette({ chars, led, onPick }: Props) {
   // what is on show cannot drift from what gets stamped.
   useEffect(() => {
     let live = true;
-    invoke<TextBitmap>("render_text", { text: chars.join("") })
+    platform
+      .renderText(chars.join(""))
       .then((b) => live && setBitmap(b))
       .catch((e) => live && setError(String(e)));
     return () => {

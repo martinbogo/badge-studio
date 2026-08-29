@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Browser build output, produced by `npm run build:web`.
+dist-web

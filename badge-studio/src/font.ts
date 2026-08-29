@@ -26,16 +26,10 @@
  * below mirrors `font::resolve`.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { platform } from "./platform";
+import type { FaceInfo } from "./platform";
 
-export interface FaceInfo {
-  id: string;
-  name: string;
-  notice: string;
-  /** False for a face that only exists to be fallen back to, like the emoji. */
-  pickable: boolean;
-  advances: [string, number][];
-}
+export type { FaceInfo };
 
 interface Loaded {
   id: string;
@@ -57,7 +51,7 @@ const ASSUMED = 8;
 
 export async function loadFontMetrics(): Promise<void> {
   if (faces.length) return;
-  const list = await invoke<FaceInfo[]>("font_metrics");
+  const list = await platform.fontMetrics();
   faces = list.map((f) => ({ ...f, advances: new Map(f.advances) }));
 }
 

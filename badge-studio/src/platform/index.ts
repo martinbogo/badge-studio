@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// <reference types="vite/client" />
-/// <reference types="w3c-web-hid" />
-/// <reference types="web-bluetooth" />
-/// <reference types="wicg-file-system-access" />
+/**
+ * The host, chosen when the bundle is built.
+ *
+ * `@platform-impl` is a Vite alias resolving to `tauri.ts` or `web.ts`, so the
+ * unused one is never bundled: the desktop build carries no font table and the
+ * web build carries no Tauri client. Editor code imports from here and never
+ * from either implementation.
+ */
+
+export { platform } from "@platform-impl";
+export type * from "./types";

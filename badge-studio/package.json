@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:web": "BADGE_TARGET=web vite --port 5180",
+    "build:web": "tsc && BADGE_TARGET=web vite build --outDir dist-web"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -21,6 +23,9 @@
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/w3c-web-hid": "^1.0.7",
+    "@types/web-bluetooth": "^0.0.21",
+    "@types/wicg-file-system-access": "^2023.10.7",
     "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^7.0.2",
     "vite": "^8.2.0",

@@ -140,3 +140,14 @@ jobs:
       - name: Test
         working-directory: badge-studio
         run: npm test
+
+      # Both targets, because they are different bundles: the alias in
+      # vite.config.ts swaps the platform implementation, so a change that
+      # compiles for the desktop can still break the browser build.
+      - name: Build (desktop)
+        working-directory: badge-studio
+        run: npx vite build
+
+      - name: Build (web)
+        working-directory: badge-studio
+        run: npm run build:web
