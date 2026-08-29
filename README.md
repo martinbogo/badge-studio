@@ -36,22 +36,25 @@ better choice; the `.tar.gz` is the bare executable and expects
 
 ## Web client
 
-There is also a browser version in [web/](web/) that needs nothing installed.
-Two static files on any HTTPS host, and it programs the badge over USB or
-Bluetooth using the same glyphs and the same wire format as the desktop app.
+The same editor runs in a browser with nothing installed: drawing tools, the
+timeline, message slots, documents and both transports.
 
 ```bash
-cd web && python3 -m http.server 8765     # then open http://localhost:8765/
+cd badge-studio
+npm run dev:web      # http://localhost:5180
+npm run build:web    # -> badge-studio/dist-web/, upload anywhere over HTTPS
 ```
 
-It is the only way to reach Android, where the desktop app does not run. It
-cannot reach iOS: Safari implements neither WebHID nor Web Bluetooth on any
-platform. The desktop app remains the better tool for large animations, which
-Bluetooth handles poorly regardless of client.
+It is the only way to use Badge Studio on **Android**. It cannot run on iOS,
+where Safari implements neither WebHID nor Web Bluetooth. Three things differ
+from the desktop and always will: connecting a badge needs a click, documents
+are handles rather than paths, and double-clicking a `.badge` file does not
+open it.
 
-See [web/README.md](web/README.md) for deploying it and for how the glyph table
-and encoder are kept in step with the Rust ones.
-
+Both builds are one codebase. Only the host-specific parts live behind
+`src/platform/`, and `vite.config.ts` swaps the implementation at build time so
+neither bundle carries the other's baggage. See
+[web/README.md](web/README.md).
 
 ## What the badge can hold
 
